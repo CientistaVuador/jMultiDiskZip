@@ -24,22 +24,12 @@
  *
  * For more information, please refer to <https://unlicense.org>
  */
-package matinilad.jmultidiskzip;
-
-import java.security.NoSuchAlgorithmException;
-import matinilad.jmultidiskzip.api.PartOutputStream;
+package matinilad.jmultidiskzip.api;
 
 /**
  *
  * @author Cien
  */
-public class Main {
-
-    /**
-     * @param args the command line arguments
-     */
-    public static void main(String[] args) throws Exception {
-        PartOutputStream o = new PartOutputStream(null, null, 0, "sha-1");
-    }
+public class HashAlgorithms {
     
 }
