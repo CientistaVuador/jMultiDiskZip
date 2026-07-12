@@ -35,6 +35,7 @@ import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.HexFormat;
+import java.util.Objects;
 
 /**
  *
@@ -46,63 +47,99 @@ public class PartOutputStream extends OutputStream {
     private final String fileName;
     private final long partSize;
     private final MessageDigest digest;
-    private final String digestName;
-    
+    private final HashAlgorithm hashAlgorithm;
+
     private OutputStream output = null;
-    private long written = 0;
+    private long count = 0;
     private int partNumber = 0;
     private String partString = "";
-    
-    public PartOutputStream(Path path, String fileName, long partSize, String digestAlgorithm) throws NoSuchAlgorithmException {
-        this.path = path;
-        this.fileName = fileName;
+
+    public PartOutputStream(Path path, String fileName, long partSize, HashAlgorithm hashAlgorithm) {
+        this.path = Objects.requireNonNull(path);
+        this.fileName = Objects.requireNonNull(fileName);
+        if (partSize < 1) {
+            throw new IllegalArgumentException("part size < 1");
+        }
         this.partSize = partSize;
-        
-        if (digestAlgorithm != null) {
-            this.digest = MessageDigest.getInstance(digestAlgorithm);
-            
-            String tmpDigestName = this.digest.getAlgorithm().toLowerCase().replace('/', '_');
-            if (tmpDigestName.startsWith("sha-")) {
-                tmpDigestName = tmpDigestName.replace("-", "");
-            } else if (tmpDigestName.startsWith("sha3-")) {
-                tmpDigestName = tmpDigestName.replace("-", "_");
+        this.hashAlgorithm = hashAlgorithm;
+
+        if (this.hashAlgorithm != null) {
+            try {
+                this.digest = MessageDigest.getInstance(this.hashAlgorithm.getAlgorithm());
+            } catch (NoSuchAlgorithmException ex) {
+                throw new IllegalArgumentException(ex);
             }
-            this.digestName = tmpDigestName;
         } else {
             this.digest = null;
-            this.digestName = null;
         }
+    }
+
+    private Path createFile(String suffix) {
+        return this.path.resolve(this.fileName + suffix);
+    }
+
+    private void closePart() throws IOException {
+        if (this.output != null) {
+            this.output.close();
+            this.output = null;
+            this.count = 0;
+
+            if (this.digest != null) {
+                Path checksumFile = createFile(this.partString+"."+this.hashAlgorithm.getExtension());
+                Files.writeString(checksumFile, HexFormat.of().formatHex(this.digest.digest()), StandardCharsets.UTF_8);
+            }
+        }
+    }
+
+    private void nextPart() throws IOException {
+        closePart();
+
+        this.partNumber++;
+
+        this.partString = Integer.toString(this.partNumber);
+        this.partString = "." + "0".repeat(Math.max(3 - this.partString.length(), 0)) + this.partString;
+        this.output = new BufferedOutputStream(Files.newOutputStream(createFile(this.partString)));
     }
     
     @Override
     public void write(int b) throws IOException {
-        if (this.output == null) {
-            this.partNumber++;
-            this.partString = Integer.toString(this.partNumber);
-            this.partString = "0".repeat(Math.max(3 - this.partString.length(), 0)) + this.partString;
-            this.output = new BufferedOutputStream(Files.newOutputStream(this.path.resolve(this.fileName+"."+this.partString)));
-            this.digest.reset();
+        if (this.output == null || this.count >= this.partSize) {
+            nextPart();
         }
-        
         this.output.write(b);
-        this.written++;
+        this.count++;
         
-        if (this.written >= this.partSize) {
-            this.output.close();
-            this.output = null;
-            this.written = 0;
-            
-            byte[] md5HexBytes = HexFormat.of().formatHex(this.digest.digest()).getBytes(StandardCharsets.UTF_8);
-            Files.write(this.path.resolve(this.fileName+"."+this.partString+".md5"), md5HexBytes);
+        if (this.digest != null) {
+            this.digest.update((byte) b);
+        }
+    }
+
+    @Override
+    public void write(byte[] b, int off, int len) throws IOException {
+        if (this.output == null) {
+            nextPart();
+        }
+
+        int from = off;
+        int to = off + len;
+
+        while (from < to) {
+            if (this.count >= this.partSize) {
+                nextPart();
+            }
+            int toWrite = (int) Math.min(to - from, this.partSize - this.count);
+            this.output.write(b, from, toWrite);
+            if (this.digest != null) {
+                this.digest.update(b, from, toWrite);
+            }
+            this.count += toWrite;
+            from += toWrite;
         }
     }
 
     @Override
     public void close() throws IOException {
-        if (this.output == null) {
-            return;
-        }
-        this.output.close();
+        closePart();
     }
-    
+
 }

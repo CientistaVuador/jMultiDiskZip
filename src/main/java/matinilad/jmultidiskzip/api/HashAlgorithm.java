@@ -30,6 +30,51 @@ package matinilad.jmultidiskzip.api;
  *
  * @author Cien
  */
-public class HashAlgorithms {
+public enum HashAlgorithm {
+    SHA256("SHA256 [32 Bytes] (Recommended, Secure)", "SHA-256", "sha256"),
+    SHA1("SHA1 [20 Bytes] (Insecure)", "SHA-1", "sha1"),
+    MD5("MD5 [16 Bytes] (Fast, Insecure)", "MD5", "md5")
+    ;
+    
+    public static HashAlgorithm fromExtension(String extension) {
+        for (HashAlgorithm a:values()) {
+            if (a.getExtension().equalsIgnoreCase(extension)) {
+                return a;
+            }
+        }
+        return null;
+    }
+    
+    public static HashAlgorithm fromAlgorithm(String algorithm) {
+        for (HashAlgorithm a:values()) {
+            if (a.getAlgorithm().equalsIgnoreCase(algorithm)) {
+                return a;
+            }
+        }
+        return null;
+    }
+    
+    private final String displayName;
+    private final String algorithm;
+    private final String extension;
+    
+    private HashAlgorithm(String displayName, String algorithm, String extension) {
+        this.displayName = displayName;
+        this.algorithm = algorithm;
+        this.extension = extension;
+    }
+
+    public String getDisplayName() {
+        return displayName;
+    }
+
+    public String getAlgorithm() {
+        return algorithm;
+    }
+
+    public String getExtension() {
+        return extension;
+    }
+    
     
 }
