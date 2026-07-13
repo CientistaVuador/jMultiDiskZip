@@ -27,20 +27,28 @@
 package matinilad.jmultidiskzip;
 
 import java.io.BufferedInputStream;
-import java.io.File;
+import java.io.BufferedOutputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashSet;
 import java.util.HexFormat;
+import java.util.List;
+import java.util.Scanner;
+import java.util.Set;
 import java.util.zip.CRC32;
-import java.util.zip.Deflater;
+import java.util.zip.GZIPInputStream;
 import java.util.zip.GZIPOutputStream;
 import java.util.zip.ZipEntry;
+import java.util.zip.ZipInputStream;
 import java.util.zip.ZipOutputStream;
 import matinilad.jmultidiskzip.api.HashAlgorithm;
+import matinilad.jmultidiskzip.api.PartInputStream;
 import matinilad.jmultidiskzip.api.PartOutputStream;
 
 /**
@@ -134,43 +142,134 @@ public class Main {
                 out.putNextEntry(checksumEntry);
                 out.write(hashData);
                 out.closeEntry();
-                
+
                 System.out.println(checksumEntry.getName());
             }
         }
     }
 
-    /**
-     * @param args the command line arguments
-     */
-    public static void main(String[] args) throws Exception {
-        if (args.length != 5) {
-            System.out.println("Usage: [File Name] [Part Size] [SHA-256/SHA-1/MD5/None] [Input Directory] [Output Directory]");
+    private static void create(String[] args) throws Exception {
+        if (args.length < 3) {
+            System.out.println("Usage: [Output File (Must end with .001)] [Part Size] [SHA-256/SHA-1/MD5/None] [Input 1] [Input 2] ...");
             return;
         }
-        String fileName = args[0];
+        Path outputFile = Path.of(args[0]);
         long partSize = Long.parseLong(args[1]);
         HashAlgorithm hash = HashAlgorithm.fromAlgorithm(args[2]);
-        Path inputDirectory = Path.of(args[3]);
-        Path outputDirectory = Path.of(args[4]);
+        
+        List<Path> inputs = new ArrayList<>();
+        Set<String> names = new HashSet<>();
+        for (int i = 3; i < args.length; i++) {
+            Path p = Path.of(args[i]);
+            if (!Files.exists(p)) {
+                System.out.println("does not exists: "+p);
+            }
+            p = p.toRealPath();
+            
+            Path fileName = p.getFileName();
+            if (fileName == null) {
+                if (!Files.isDirectory(p)) {
+                    System.out.println("file is root and it's not a directory! "+p);
+                    continue;
+                }
+                for (Path e : Files.list(p).toList()) {
+                    Path name = e.getFileName();
+                    if (!names.add(name.toString())) {
+                        System.out.println("file is duplicated: "+e);
+                        continue;
+                    }
+                    inputs.add(e);
+                }
+                continue;
+            }
+            if (!names.add(fileName.toString())) {
+                System.out.println("file is duplicated: "+p);
+                continue;
+            }
+            inputs.add(p);
+        }
+        
+        Files.createDirectories(outputFile.getParent());
+        
+        try (PartOutputStream out = new PartOutputStream(outputFile, partSize, hash)) {
+            try (GZIPOutputStream gzip = new GZIPOutputStream(out)) {
+                try (ZipOutputStream zip = new ZipOutputStream(gzip, StandardCharsets.UTF_8)) {
+                    for (Path input:inputs) {
+                        writeFile(input.getParent(), input, hash, zip);
+                    }
+                }
+            }
+        }
+    }
 
-        if (fileName.isBlank()) {
-            System.out.println("fileName is empty!");
+    private static void extract(String[] args) throws Exception {
+        if (args.length != 2) {
+            System.out.println("Usage: [Input File (Must Start With .001)] [Output Directory]");
             return;
         }
         
-        if (!Files.isDirectory(inputDirectory)) {
-            System.out.println("Input directory is not a directory!");
+        Scanner scanner = new Scanner(System.in);
+        
+        Path inputFile = Path.of(args[0]);
+        Path outputDirectory = Path.of(args[1]);
+        
+        Files.createDirectories(outputDirectory);
+        
+        try (PartInputStream in = new PartInputStream(inputFile) {
+            @Override
+            protected void onWaitingForNextPart(Path requiredPart) {
+                System.out.println("Please insert the directory for the next part: "+requiredPart.getFileName().toString());
+                System.out.print(">");
+                String input = scanner.nextLine();
+                if (input.isEmpty()) {
+                    continueSignal(null, false);
+                    return;
+                }
+                continueSignal(Path.of(input), false);
+            }
+        }) {
+            try (GZIPInputStream gzip = new GZIPInputStream(in)) {
+                try (ZipInputStream zip = new ZipInputStream(gzip, StandardCharsets.UTF_8)) {
+                    ZipEntry entry;
+                    while ((entry = zip.getNextEntry()) != null) {
+                        Path entryPath = outputDirectory.resolve(entry.getName());
+                        
+                        System.out.println(entry.getName()+" -> "+entryPath);
+                        
+                        Files.createDirectories(entryPath.getParent());
+                        if (entry.isDirectory()) {
+                            Files.createDirectory(entryPath);
+                            continue;
+                        }
+                        
+                        try (BufferedOutputStream out = new BufferedOutputStream(Files.newOutputStream(entryPath))) {
+                            byte[] buffer = new byte[4096];
+                            int r;
+                            while ((r = zip.read(buffer)) != -1) {
+                                out.write(buffer, 0, r);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    public static void main(String[] args) throws Exception {
+        if (args.length == 0) {
+            System.out.println("Usage: -create or -extract");
             return;
         }
-
-        Files.createDirectories(outputDirectory);
-
-        try (PartOutputStream out = new PartOutputStream(outputDirectory, fileName + ".zip.gz", partSize, hash)) {
-            try (GZIPOutputStream gzip = new GZIPOutputStream(out)) {
-                try (ZipOutputStream zip = new ZipOutputStream(gzip, StandardCharsets.UTF_8)) {
-                    writeFile(inputDirectory, inputDirectory, hash, zip);
-                }
+        switch (args[0]) {
+            case "-create" -> {
+                create(Arrays.copyOfRange(args, 1, args.length));
+            }
+            case "-extract" -> {
+                extract(Arrays.copyOfRange(args, 1, args.length));
+            }
+            default -> {
+                System.out.println("Usage: -create or -extract");
+                return;
             }
         }
     }

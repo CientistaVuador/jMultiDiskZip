@@ -35,7 +35,7 @@ import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.HexFormat;
-import java.util.Objects;
+import static matinilad.jmultidiskzip.api.PartInputStream.splitPathData;
 
 /**
  *
@@ -43,23 +43,35 @@ import java.util.Objects;
  */
 public class PartOutputStream extends OutputStream {
 
-    private final Path path;
-    private final String fileName;
+    private final Path directory;
+    private final String name;
+    private final int leadingZeros;
+    
     private final long partSize;
     private final MessageDigest digest;
     private final HashAlgorithm hashAlgorithm;
-
+    
     private OutputStream output = null;
     private long count = 0;
     private int partNumber = 0;
     private String partString = "";
+    
+    public PartOutputStream(Path partOne, long partSize, HashAlgorithm hashAlgorithm) {
+        Object[] pathData = splitPathData(partOne);
 
-    public PartOutputStream(Path path, String fileName, long partSize, HashAlgorithm hashAlgorithm) {
-        this.path = Objects.requireNonNull(path);
-        this.fileName = Objects.requireNonNull(fileName);
+        this.directory = (Path) pathData[0];
+        this.name = (String) pathData[1];
+        this.leadingZeros = (int) pathData[2];
+        
+        int number = (int) pathData[3];
+        if (number != 1) {
+            throw new IllegalArgumentException("Part number must be 1! Found: " + number);
+        }
+        
         if (partSize < 1) {
             throw new IllegalArgumentException("part size < 1");
         }
+        
         this.partSize = partSize;
         this.hashAlgorithm = hashAlgorithm;
 
@@ -75,7 +87,7 @@ public class PartOutputStream extends OutputStream {
     }
 
     private Path createFile(String suffix) {
-        return this.path.resolve(this.fileName + suffix);
+        return this.directory.resolve(this.name + suffix);
     }
 
     private void closePart() throws IOException {
@@ -97,7 +109,7 @@ public class PartOutputStream extends OutputStream {
         this.partNumber++;
 
         this.partString = Integer.toString(this.partNumber);
-        this.partString = "." + "0".repeat(Math.max(3 - this.partString.length(), 0)) + this.partString;
+        this.partString = "." + "0".repeat(Math.max(this.leadingZeros - this.partString.length(), 0)) + this.partString;
         this.output = new BufferedOutputStream(Files.newOutputStream(createFile(this.partString)));
     }
     
