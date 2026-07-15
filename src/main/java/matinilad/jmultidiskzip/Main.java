@@ -28,6 +28,9 @@ package matinilad.jmultidiskzip;
 
 import java.io.BufferedInputStream;
 import java.io.BufferedOutputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -47,6 +50,8 @@ import java.util.zip.GZIPOutputStream;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 import java.util.zip.ZipOutputStream;
+import matinilad.jmultidiskzip.api.EncryptedInputStream;
+import matinilad.jmultidiskzip.api.EncryptedOutputStream;
 import matinilad.jmultidiskzip.api.HashAlgorithm;
 import matinilad.jmultidiskzip.api.PartInputStream;
 import matinilad.jmultidiskzip.api.PartOutputStream;
@@ -57,7 +62,7 @@ import matinilad.jmultidiskzip.api.PartOutputStream;
  */
 public class Main {
 
-    private static void writeFile(Path root, Path path, HashAlgorithm hash, ZipOutputStream out) throws IOException, NoSuchAlgorithmException {
+    private static void writeFile(Path root, Path path, HashAlgorithm hash, ZipOutputStream out, ZipOutputStream checksumOut) throws IOException, NoSuchAlgorithmException {
         Path relative = root.relativize(path);
         String entryName = "";
         for (int i = 0; i < relative.getNameCount(); i++) {
@@ -70,9 +75,13 @@ public class Main {
         if (entryName.isEmpty()) {
             if (Files.isDirectory(path)) {
                 for (Path e : Files.list(path).toList()) {
-                    writeFile(root, e, hash, out);
+                    writeFile(root, e, hash, out, checksumOut);
                 }
             }
+            return;
+        }
+
+        if (entryName.equals("jMultiDiskZip_checksums.zip")) {
             return;
         }
 
@@ -88,8 +97,11 @@ public class Main {
             out.putNextEntry(entry);
             out.closeEntry();
 
+            checksumOut.putNextEntry(entry);
+            checksumOut.closeEntry();
+
             for (Path e : Files.list(path).toList()) {
-                writeFile(root, e, hash, out);
+                writeFile(root, e, hash, out, checksumOut);
             }
             return;
         }
@@ -113,37 +125,36 @@ public class Main {
                 int r;
                 while ((r = in.read(buffer)) != -1) {
                     crc.update(buffer, 0, r);
+                    if (digest != null) {
+                        digest.update(buffer, 0, r);
+                    }
                 }
             }
             entry.setCrc(crc.getValue());
+
             out.putNextEntry(entry);
             try (BufferedInputStream in = new BufferedInputStream(Files.newInputStream(path))) {
                 byte[] buffer = new byte[1 * 1024 * 1024];
                 int r;
                 while ((r = in.read(buffer)) != -1) {
                     out.write(buffer, 0, r);
-                    if (digest != null) {
-                        digest.update(buffer, 0, r);
-                    }
                 }
             }
             out.closeEntry();
 
             if (digest != null && hash != null) {
-                crc.reset();
-
                 byte[] hashData = HexFormat.of().formatHex(digest.digest()).getBytes(StandardCharsets.UTF_8);
                 ZipEntry checksumEntry = new ZipEntry(entryName + "." + hash.getExtension());
                 checksumEntry.setMethod(ZipEntry.STORED);
                 checksumEntry.setCompressedSize(hashData.length);
                 checksumEntry.setSize(hashData.length);
+                crc.reset();
                 crc.update(hashData);
                 checksumEntry.setCrc(crc.getValue());
-                out.putNextEntry(checksumEntry);
-                out.write(hashData);
-                out.closeEntry();
 
-                System.out.println(checksumEntry.getName());
+                checksumOut.putNextEntry(checksumEntry);
+                checksumOut.write(hashData);
+                checksumOut.closeEntry();
             }
         }
     }
@@ -156,26 +167,26 @@ public class Main {
         Path outputFile = Path.of(args[0]);
         long partSize = Long.parseLong(args[1]);
         HashAlgorithm hash = HashAlgorithm.fromAlgorithm(args[2]);
-        
+
         List<Path> inputs = new ArrayList<>();
         Set<String> names = new HashSet<>();
         for (int i = 3; i < args.length; i++) {
             Path p = Path.of(args[i]);
             if (!Files.exists(p)) {
-                System.out.println("does not exists: "+p);
+                System.out.println("does not exists: " + p);
             }
             p = p.toRealPath();
-            
+
             Path fileName = p.getFileName();
             if (fileName == null) {
                 if (!Files.isDirectory(p)) {
-                    System.out.println("file is root and it's not a directory! "+p);
+                    System.out.println("file is root and it's not a directory! " + p);
                     continue;
                 }
                 for (Path e : Files.list(p).toList()) {
                     Path name = e.getFileName();
                     if (!names.add(name.toString())) {
-                        System.out.println("file is duplicated: "+e);
+                        System.out.println("file is duplicated: " + e);
                         continue;
                     }
                     inputs.add(e);
@@ -183,19 +194,38 @@ public class Main {
                 continue;
             }
             if (!names.add(fileName.toString())) {
-                System.out.println("file is duplicated: "+p);
+                System.out.println("file is duplicated: " + p);
                 continue;
             }
             inputs.add(p);
         }
-        
+
         Files.createDirectories(outputFile.getParent());
-        
+
         try (PartOutputStream out = new PartOutputStream(outputFile, partSize, hash)) {
             try (GZIPOutputStream gzip = new GZIPOutputStream(out)) {
                 try (ZipOutputStream zip = new ZipOutputStream(gzip, StandardCharsets.UTF_8)) {
-                    for (Path input:inputs) {
-                        writeFile(input.getParent(), input, hash, zip);
+                    ByteArrayOutputStream checksumStream = new ByteArrayOutputStream();
+                    try (ZipOutputStream checksumOut = new ZipOutputStream(checksumStream, StandardCharsets.UTF_8)) {
+                        for (Path input : inputs) {
+                            writeFile(input.getParent(), input, hash, zip, checksumOut);
+                        }
+                    }
+                    
+                    if (hash != null) {
+                        byte[] checksumZip = checksumStream.toByteArray();
+
+                        ZipEntry entry = new ZipEntry("jMultiDiskZip_checksums.zip");
+                        entry.setMethod(ZipEntry.STORED);
+                        entry.setCompressedSize(checksumZip.length);
+                        entry.setSize(checksumZip.length);
+                        CRC32 crc = new CRC32();
+                        crc.update(checksumZip);
+                        entry.setCrc(crc.getValue());
+
+                        zip.putNextEntry(entry);
+                        zip.write(checksumZip, 0, checksumZip.length);
+                        zip.closeEntry();
                     }
                 }
             }
@@ -207,18 +237,18 @@ public class Main {
             System.out.println("Usage: [Input File (Must Start With .001)] [Output Directory]");
             return;
         }
-        
+
         Scanner scanner = new Scanner(System.in);
-        
+
         Path inputFile = Path.of(args[0]);
         Path outputDirectory = Path.of(args[1]);
-        
+
         Files.createDirectories(outputDirectory);
-        
+
         try (PartInputStream in = new PartInputStream(inputFile) {
             @Override
             protected void onWaitingForNextPart(Path requiredPart) {
-                System.out.println("Please insert the directory for the next part: "+requiredPart.getFileName().toString());
+                System.out.println("Please insert the directory for the next part: " + requiredPart.getFileName().toString());
                 System.out.print(">");
                 String input = scanner.nextLine();
                 if (input.isEmpty()) {
@@ -233,15 +263,15 @@ public class Main {
                     ZipEntry entry;
                     while ((entry = zip.getNextEntry()) != null) {
                         Path entryPath = outputDirectory.resolve(entry.getName());
-                        
-                        System.out.println(entry.getName()+" -> "+entryPath);
-                        
+
+                        System.out.println(entry.getName() + " -> " + entryPath);
+
                         Files.createDirectories(entryPath.getParent());
                         if (entry.isDirectory()) {
                             Files.createDirectory(entryPath);
                             continue;
                         }
-                        
+
                         try (BufferedOutputStream out = new BufferedOutputStream(Files.newOutputStream(entryPath))) {
                             byte[] buffer = new byte[4096];
                             int r;
@@ -273,5 +303,5 @@ public class Main {
             }
         }
     }
-
+    
 }
