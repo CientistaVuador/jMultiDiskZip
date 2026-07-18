@@ -58,7 +58,7 @@ public class PartOutputStream extends OutputStream {
     
     public PartOutputStream(Path partOne, long partSize, HashAlgorithm hashAlgorithm) {
         Object[] pathData = splitPathData(partOne);
-
+        
         this.directory = (Path) pathData[0];
         this.name = (String) pathData[1];
         this.leadingZeros = (int) pathData[2];

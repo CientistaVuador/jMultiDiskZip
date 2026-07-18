@@ -29,8 +29,6 @@ package matinilad.jmultidiskzip;
 import java.io.BufferedInputStream;
 import java.io.BufferedOutputStream;
 import java.io.ByteArrayOutputStream;
-import java.io.FileInputStream;
-import java.io.FileOutputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -50,183 +48,45 @@ import java.util.zip.GZIPOutputStream;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 import java.util.zip.ZipOutputStream;
-import matinilad.jmultidiskzip.api.EncryptedInputStream;
-import matinilad.jmultidiskzip.api.EncryptedOutputStream;
 import matinilad.jmultidiskzip.api.HashAlgorithm;
 import matinilad.jmultidiskzip.api.PartInputStream;
 import matinilad.jmultidiskzip.api.PartOutputStream;
+import matinilad.jmultidiskzip.api.ZipWriter;
 
 /**
  *
  * @author Cien
  */
 public class Main {
-
-    private static void writeFile(Path root, Path path, HashAlgorithm hash, ZipOutputStream out, ZipOutputStream checksumOut) throws IOException, NoSuchAlgorithmException {
-        Path relative = root.relativize(path);
-        String entryName = "";
-        for (int i = 0; i < relative.getNameCount(); i++) {
-            entryName += relative.getName(i).toString();
-            if (i != relative.getNameCount() - 1) {
-                entryName += "/";
-            }
-        }
-
-        if (entryName.isEmpty()) {
-            if (Files.isDirectory(path)) {
-                for (Path e : Files.list(path).toList()) {
-                    writeFile(root, e, hash, out, checksumOut);
-                }
-            }
-            return;
-        }
-
-        if (entryName.equals("jMultiDiskZip_checksums.zip")) {
-            return;
-        }
-
-        System.out.println(entryName);
-
-        if (Files.isDirectory(path)) {
-            entryName += "/";
-            ZipEntry entry = new ZipEntry(entryName);
-            entry.setMethod(ZipEntry.STORED);
-            entry.setCompressedSize(0);
-            entry.setSize(0);
-            entry.setCrc(new CRC32().getValue());
-            out.putNextEntry(entry);
-            out.closeEntry();
-
-            checksumOut.putNextEntry(entry);
-            checksumOut.closeEntry();
-
-            for (Path e : Files.list(path).toList()) {
-                writeFile(root, e, hash, out, checksumOut);
-            }
-            return;
-        }
-
-        if (Files.isRegularFile(path)) {
-            CRC32 crc = new CRC32();
-
-            MessageDigest digest;
-            if (hash != null) {
-                digest = MessageDigest.getInstance(hash.getAlgorithm());
-            } else {
-                digest = null;
-            }
-
-            ZipEntry entry = new ZipEntry(entryName);
-            entry.setMethod(ZipEntry.STORED);
-            entry.setCompressedSize(Files.size(path));
-            entry.setSize(Files.size(path));
-            try (BufferedInputStream in = new BufferedInputStream(Files.newInputStream(path))) {
-                byte[] buffer = new byte[1 * 1024 * 1024];
-                int r;
-                while ((r = in.read(buffer)) != -1) {
-                    crc.update(buffer, 0, r);
-                    if (digest != null) {
-                        digest.update(buffer, 0, r);
-                    }
-                }
-            }
-            entry.setCrc(crc.getValue());
-
-            out.putNextEntry(entry);
-            try (BufferedInputStream in = new BufferedInputStream(Files.newInputStream(path))) {
-                byte[] buffer = new byte[1 * 1024 * 1024];
-                int r;
-                while ((r = in.read(buffer)) != -1) {
-                    out.write(buffer, 0, r);
-                }
-            }
-            out.closeEntry();
-
-            if (digest != null && hash != null) {
-                byte[] hashData = HexFormat.of().formatHex(digest.digest()).getBytes(StandardCharsets.UTF_8);
-                ZipEntry checksumEntry = new ZipEntry(entryName + "." + hash.getExtension());
-                checksumEntry.setMethod(ZipEntry.STORED);
-                checksumEntry.setCompressedSize(hashData.length);
-                checksumEntry.setSize(hashData.length);
-                crc.reset();
-                crc.update(hashData);
-                checksumEntry.setCrc(crc.getValue());
-
-                checksumOut.putNextEntry(checksumEntry);
-                checksumOut.write(hashData);
-                checksumOut.closeEntry();
-            }
-        }
-    }
-
+    
     private static void create(String[] args) throws Exception {
         if (args.length < 3) {
             System.out.println("Usage: [Output File (Must end with .001)] [Part Size] [SHA-256/SHA-1/MD5/None] [Input 1] [Input 2] ...");
             return;
         }
-        Path outputFile = Path.of(args[0]);
+        Path outputFile = Path.of(args[0]).toAbsolutePath();
         long partSize = Long.parseLong(args[1]);
         HashAlgorithm hash = HashAlgorithm.fromAlgorithm(args[2]);
 
-        List<Path> inputs = new ArrayList<>();
-        Set<String> names = new HashSet<>();
-        for (int i = 3; i < args.length; i++) {
-            Path p = Path.of(args[i]);
-            if (!Files.exists(p)) {
-                System.out.println("does not exists: " + p);
-            }
-            p = p.toRealPath();
-
-            Path fileName = p.getFileName();
-            if (fileName == null) {
-                if (!Files.isDirectory(p)) {
-                    System.out.println("file is root and it's not a directory! " + p);
-                    continue;
-                }
-                for (Path e : Files.list(p).toList()) {
-                    Path name = e.getFileName();
-                    if (!names.add(name.toString())) {
-                        System.out.println("file is duplicated: " + e);
-                        continue;
-                    }
-                    inputs.add(e);
-                }
-                continue;
-            }
-            if (!names.add(fileName.toString())) {
-                System.out.println("file is duplicated: " + p);
-                continue;
-            }
-            inputs.add(p);
+        if (outputFile.getParent() != null) {
+            Files.createDirectories(outputFile.getParent());
         }
-
-        Files.createDirectories(outputFile.getParent());
-
+        
+        List<Path> inputs = new ArrayList<>();
+        for (int i = 3; i < args.length; i++) {
+            inputs.add(Path.of(args[i]));
+        }
+        
         try (PartOutputStream out = new PartOutputStream(outputFile, partSize, hash)) {
             try (GZIPOutputStream gzip = new GZIPOutputStream(out)) {
                 try (ZipOutputStream zip = new ZipOutputStream(gzip, StandardCharsets.UTF_8)) {
-                    ByteArrayOutputStream checksumStream = new ByteArrayOutputStream();
-                    try (ZipOutputStream checksumOut = new ZipOutputStream(checksumStream, StandardCharsets.UTF_8)) {
-                        for (Path input : inputs) {
-                            writeFile(input.getParent(), input, hash, zip, checksumOut);
+                    ZipWriter writer = new ZipWriter(zip, inputs.toArray(Path[]::new), hash) {
+                        @Override
+                        protected void onEntry(ZipEntry entry) {
+                            System.out.println(entry.getName());
                         }
-                    }
-                    
-                    if (hash != null) {
-                        byte[] checksumZip = checksumStream.toByteArray();
-
-                        ZipEntry entry = new ZipEntry("jMultiDiskZip_checksums.zip");
-                        entry.setMethod(ZipEntry.STORED);
-                        entry.setCompressedSize(checksumZip.length);
-                        entry.setSize(checksumZip.length);
-                        CRC32 crc = new CRC32();
-                        crc.update(checksumZip);
-                        entry.setCrc(crc.getValue());
-
-                        zip.putNextEntry(entry);
-                        zip.write(checksumZip, 0, checksumZip.length);
-                        zip.closeEntry();
-                    }
+                    };
+                    writer.create();
                 }
             }
         }
