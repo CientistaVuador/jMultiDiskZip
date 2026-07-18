@@ -47,7 +47,7 @@ import java.util.zip.ZipOutputStream;
  *
  * @author Cien
  */
-public class ZipWriter {
+public class ZipCreator {
 
     public static final String CHECKSUMS_ZIP_FILENAME = "jMultiDiskZip_checksums.zip";
 
@@ -60,7 +60,7 @@ public class ZipWriter {
     private ByteArrayOutputStream checksumsStream = null;
     private ZipOutputStream checksumsZip = null;
 
-    public ZipWriter(ZipOutputStream output, Path[] inputs, HashAlgorithm hash) {
+    public ZipCreator(ZipOutputStream output, Path[] inputs, HashAlgorithm hash) {
         this.output = Objects.requireNonNull(output, "output is null");
         this.inputs = Objects.requireNonNull(inputs, "inputs is null");
         for (int i = 0; i < inputs.length; i++) {
@@ -72,9 +72,9 @@ public class ZipWriter {
     }
 
     protected void onEntry(ZipEntry entry) {
-        
+
     }
-    
+
     protected void onFileRejected(Path file, IOException reason) {
 
     }
@@ -122,7 +122,7 @@ public class ZipWriter {
     private void writeToZip(Path root, Path file) throws IOException {
         String entryName = createEntryName(root, file);
 
-        if (entryName.equalsIgnoreCase(CHECKSUMS_ZIP_FILENAME)) {
+        if (entryName.equals(CHECKSUMS_ZIP_FILENAME)) {
             onFileRejected(file, new IOException("file named " + CHECKSUMS_ZIP_FILENAME + " is not allowed."));
             return;
         }
@@ -131,16 +131,15 @@ public class ZipWriter {
             onFileRejected(file, new IOException("file does not exists"));
             return;
         }
-        
+
         if (!Files.isReadable(file)) {
             onFileRejected(file, new IOException("file is not readable"));
             return;
         }
 
         boolean isFile = Files.isRegularFile(file);
-        boolean isDirectory = Files.isDirectory(file);
 
-        if (!isFile && !isDirectory) {
+        if (!isFile && !Files.isDirectory(file)) {
             onFileRejected(file, new IOException("file type is unknown"));
             return;
         }
@@ -156,6 +155,7 @@ public class ZipWriter {
             entry.setLastModifiedTime(attributes.lastModifiedTime());
             entry.setLastAccessTime(attributes.lastAccessTime());
         } catch (UnsupportedOperationException ex) {
+            //todo
         }
 
         if (isFile) {
@@ -166,23 +166,28 @@ public class ZipWriter {
                 this.digest.reset();
             }
 
-            try (InputStream in = Files.newInputStream(file)) {
-                byte[] buffer = new byte[4096];
-                int r;
-                while ((r = in.read(buffer, 0, buffer.length)) != -1) {
-                    count += r;
+            try {
+                try (InputStream in = Files.newInputStream(file)) {
+                    byte[] buffer = new byte[4096];
+                    int r;
+                    while ((r = in.read(buffer, 0, buffer.length)) != -1) {
+                        count += r;
 
-                    this.crc.update(buffer, 0, r);
-                    if (this.digest != null) {
-                        this.digest.update(buffer, 0, r);
+                        this.crc.update(buffer, 0, r);
+                        if (this.digest != null) {
+                            this.digest.update(buffer, 0, r);
+                        }
                     }
                 }
+            } catch (IOException ex) {
+                onFileRejected(file, ex);
+                return;
             }
 
             entry.setSize(count);
             entry.setCompressedSize(count);
             entry.setCrc(this.crc.getValue());
-        } else if (isDirectory) {
+        } else {
             this.crc.reset();
 
             entry.setSize(0);
@@ -211,40 +216,38 @@ public class ZipWriter {
         }
 
         if (this.hash != null) {
-            try {
-                if (isFile) {
-                    byte[] hashHexBytes = HexFormat.of().formatHex(this.digest.digest()).getBytes(StandardCharsets.UTF_8);
-                    
-                    this.crc.reset();
-                    this.crc.update(hashHexBytes, 0, hashHexBytes.length);
-                    long crcValue = this.crc.getValue();
-                    
-                    entry = new ZipEntry(entryName + "." + this.hash.getExtension());
+            if (isFile) {
+                byte[] hashHexBytes = HexFormat.of()
+                        .formatHex(this.digest.digest()).getBytes(StandardCharsets.UTF_8);
 
-                    entry.setMethod(ZipEntry.STORED);
-                    
-                    entry.setCompressedSize(hashHexBytes.length);
-                    entry.setSize(hashHexBytes.length);
-                    entry.setCrc(crcValue);
+                this.crc.reset();
+                this.crc.update(hashHexBytes, 0, hashHexBytes.length);
+                long crcValue = this.crc.getValue();
 
-                    entry.setCreationTime(FileTime.fromMillis(System.currentTimeMillis()));
-                    entry.setLastModifiedTime(FileTime.fromMillis(System.currentTimeMillis()));
-                    entry.setLastAccessTime(FileTime.fromMillis(System.currentTimeMillis()));
-                    
-                    this.checksumsZip.putNextEntry(entry);
-                    this.checksumsZip.write(hashHexBytes, 0, hashHexBytes.length);
-                    this.checksumsZip.closeEntry();
-                } else if (isDirectory) {
-                    this.checksumsZip.putNextEntry(entry);
-                    this.checksumsZip.closeEntry();
-                }
-            } catch (ZipException ex) {
-                //todo
+                entry = new ZipEntry(entryName + "." + this.hash.getExtension());
+
+                entry.setMethod(ZipEntry.STORED);
+
+                entry.setCompressedSize(hashHexBytes.length);
+                entry.setSize(hashHexBytes.length);
+                entry.setCrc(crcValue);
+
+                FileTime time = FileTime.fromMillis(System.currentTimeMillis());
+                entry.setCreationTime(time);
+                entry.setLastModifiedTime(time);
+                entry.setLastAccessTime(time);
+
+                this.checksumsZip.putNextEntry(entry);
+                this.checksumsZip.write(hashHexBytes, 0, hashHexBytes.length);
+                this.checksumsZip.closeEntry();
+            } else {
+                this.checksumsZip.putNextEntry(entry);
+                this.checksumsZip.closeEntry();
             }
         }
         
-        if (isDirectory) {
-            for (Path p:Files.list(file).toArray(Path[]::new)) {
+        if (!isFile) {
+            for (Path p : Files.list(file).toArray(Path[]::new)) {
                 writeToZip(root, p);
             }
         }
@@ -268,9 +271,10 @@ public class ZipWriter {
                 entry.setSize(checksumsData.length);
                 entry.setCrc(crcValue);
 
-                entry.setCreationTime(FileTime.fromMillis(System.currentTimeMillis()));
-                entry.setLastModifiedTime(FileTime.fromMillis(System.currentTimeMillis()));
-                entry.setLastAccessTime(FileTime.fromMillis(System.currentTimeMillis()));
+                FileTime time = FileTime.fromMillis(System.currentTimeMillis());
+                entry.setCreationTime(time);
+                entry.setLastModifiedTime(time);
+                entry.setLastAccessTime(time);
 
                 this.output.putNextEntry(entry);
                 this.output.write(checksumsData, 0, checksumsData.length);
@@ -283,27 +287,27 @@ public class ZipWriter {
         init();
 
         for (Path input : this.inputs) {
-            Path realPath;
             try {
-                realPath = input.toRealPath();
+                Path realPath = input.toRealPath();
+                input = realPath;
             } catch (IOException ex) {
                 onFileRejected(input, ex);
                 continue;
             }
 
-            Path parent = realPath.getParent();
+            Path parent = input.getParent();
             if (parent == null) {
-                if (!Files.isDirectory(realPath)) {
-                    onFileRejected(realPath, new IOException("file has no parent and it's not a directory!"));
+                if (!Files.isDirectory(input)) {
+                    onFileRejected(input, new IOException("file has no parent and it's not a directory!"));
                     continue;
                 }
-                for (Path p : Files.list(realPath).toArray(Path[]::new)) {
-                    writeToZip(realPath, p);
+                for (Path p : Files.list(input).toArray(Path[]::new)) {
+                    writeToZip(input, p);
                 }
                 continue;
             }
-
-            writeToZip(parent, realPath);
+            
+            writeToZip(parent, input);
         }
 
         doFinal();

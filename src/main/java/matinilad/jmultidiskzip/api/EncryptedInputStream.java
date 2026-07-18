@@ -50,6 +50,7 @@ import javax.crypto.ShortBufferException;
 import javax.crypto.spec.GCMParameterSpec;
 import javax.crypto.spec.PBEKeySpec;
 import javax.crypto.spec.SecretKeySpec;
+import static matinilad.jmultidiskzip.api.EncryptedOutputStream.MAGIC;
 
 /**
  *
@@ -58,161 +59,148 @@ import javax.crypto.spec.SecretKeySpec;
 public class EncryptedInputStream extends FilterInputStream {
 
     public static class IncorrectPasswordException extends IOException {
+
         private static final long serialVersionUID = 1L;
-        
+
         public IncorrectPasswordException(String message) {
             super(message);
         }
     }
-    
+
     private final char[] password;
-    
+
     private boolean header = false;
-    
+
     private SecretKey key = null;
     private Cipher cipher = null;
-    private long counter = 0;
-    
-    private final byte[] buffer = new byte[16384];
+    private long nonce = 0;
+
+    private final byte[] buffer = new byte[EncryptedOutputStream.BUFFER_SIZE];
     private int bufferLength = 0;
     private int bufferIndex = 0;
-    
+
     private boolean eof = false;
     private boolean closed = false;
-    
+
     public EncryptedInputStream(InputStream in, char[] password) {
         super(Objects.requireNonNull(in, "in is null"));
         this.password = password.clone();
     }
-    
-    private void readHeader() throws IOException {
-        byte[] salt = this.in.readNBytes(32);
-        if (salt.length != 32) {
-            throw new EOFException("unexpected EOF, expected salt");
+
+    private GCMParameterSpec nextIV() {
+        byte[] iv = new byte[12];
+        for (int i = 0; i < 8; i++) {
+            iv[i] = (byte) (this.nonce >>> ((7 - i) * 8));
         }
-        
+        this.nonce++;
+
+        return new GCMParameterSpec(128, iv);
+    }
+
+    private void readHeader() throws IOException {
         try {
+            byte[] salt = this.in.readNBytes(32);
+            if (salt.length != 32) {
+                throw new EOFException("unexpected EOF, expected salt");
+            }
+
+            Mac mac = Mac.getInstance("HmacSHA256");
+
+            SecretKey signKey;
+            SecretKey encryptionKey;
+
             PBEKeySpec spec = new PBEKeySpec(this.password, salt, 1_000_000, 256);
             try {
                 SecretKeyFactory factory = SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256");
                 SecretKey secretKey = new SecretKeySpec(factory.generateSecret(spec).getEncoded(), "HmacSHA256");
-                
-                byte[] magicBytes = EncryptedOutputStream.MAGIC.getBytes(StandardCharsets.UTF_8);
-                
-                Mac mac = Mac.getInstance("HmacSHA256");
+
                 mac.init(secretKey);
-                mac.update(ByteBuffer.allocate(4).putInt(magicBytes.length).array());
-                mac.update(magicBytes);
-                byte[] signedMagic = mac.doFinal();
-                
-                byte[] streamMagic = this.in.readNBytes(32);
-                if (streamMagic.length != 32) {
-                    throw new EOFException("unexpected EOF, expected signed magic");
-                }
-                
-                if (!MessageDigest.isEqual(signedMagic, streamMagic)) {
-                    throw new IncorrectPasswordException("incorrect password or invalid magic");
-                }
-                
-                mac.update(signedMagic);
-                this.key = new SecretKeySpec(mac.doFinal(), "AES");
+
+                mac.update((byte) 0x01);
+                signKey = new SecretKeySpec(mac.doFinal(), "HmacSHA256");
+
+                mac.update(signKey.getEncoded());
+                mac.update((byte) 0x02);
+                encryptionKey = new SecretKeySpec(mac.doFinal(), "AES");
             } finally {
                 spec.clearPassword();
                 Arrays.fill(this.password, '\0');
             }
-        } catch (NoSuchAlgorithmException | InvalidKeySpecException | InvalidKeyException ex) {
+            
+            mac.init(signKey);
+            mac.update(MAGIC.getBytes(StandardCharsets.UTF_8));
+            
+            byte[] signedMagic = mac.doFinal();
+            byte[] headerMagic = this.in.readNBytes(signedMagic.length);
+            if (headerMagic.length != signedMagic.length) {
+                throw new EOFException("unexpected EOF, expected signed magic");
+            }
+            if (!MessageDigest.isEqual(signedMagic, headerMagic)) {
+                throw new IncorrectPasswordException("incorrect password or invalid magic");
+            }
+
+            this.key = encryptionKey;
+            
+            this.cipher = Cipher.getInstance("AES/GCM/NoPadding");
+            this.cipher.init(Cipher.DECRYPT_MODE, this.key, nextIV());
+            
+            this.cipher.updateAAD(salt);
+            this.cipher.updateAAD(signedMagic);
+        } catch (NoSuchAlgorithmException | InvalidKeySpecException | InvalidKeyException | NoSuchPaddingException | InvalidAlgorithmParameterException ex) {
             throw new IOException(ex);
         }
     }
-    
+
     private void readBuffer() throws IOException {
         try {
-            if (this.cipher == null) {
-                this.cipher = Cipher.getInstance("AES_256/GCM/NoPadding");
+            byte[] encrypted = this.in.readNBytes(this.buffer.length + 16);
+            if (encrypted.length == 0) {
+                throw new EOFException("expected last buffer, found nothing");
             }
-            
-            if (this.eof) {
-                return;
+            if (encrypted.length < 17) {
+                throw new EOFException("buffer must be at least 17 bytes!");
             }
+            this.bufferLength = this.cipher.doFinal(encrypted, 0, encrypted.length, this.buffer, 0);
+            this.bufferIndex = 1;
             
-            int firstByte = this.in.read();
-            if (firstByte == -1) {
-                this.eof = true;
-                return;
-            }
+            this.eof = (this.buffer[0] == 0x01);
             
-            byte[] inputBuffer = new byte[this.buffer.length + 16];
-            inputBuffer[0] = (byte) firstByte;
-            int inputBufferLength = 1;
-            
-            do {
-                int r = this.in.read(inputBuffer, inputBufferLength, inputBuffer.length - inputBufferLength);
-                if (r == -1) {
-                    this.eof = true;
-                    break;
-                }
-                inputBufferLength += r;
-            } while (inputBufferLength < inputBuffer.length);
-            
-            if (inputBufferLength < 16) {
-                throw new IOException("input buffer must be at least 16 bytes!");
-            }
-            
-            byte[] iv = new byte[] {
-                0, 0, 0, 0,
-                (byte) (this.counter >>> (7 * 8)),
-                (byte) (this.counter >>> (6 * 8)),
-                (byte) (this.counter >>> (5 * 8)),
-                (byte) (this.counter >>> (4 * 8)),
-                (byte) (this.counter >>> (3 * 8)),
-                (byte) (this.counter >>> (2 * 8)),
-                (byte) (this.counter >>> (1 * 8)),
-                (byte) (this.counter >>> (0 * 8))
-            };
-            
-            GCMParameterSpec gcm = new GCMParameterSpec(128, iv);
-            this.cipher.init(Cipher.DECRYPT_MODE, this.key, gcm);
-            this.bufferLength = this.cipher.doFinal(inputBuffer, 0, inputBufferLength, this.buffer);
-            
-            this.counter++;
-            this.bufferIndex = 0;
-        } catch (NoSuchAlgorithmException | NoSuchPaddingException | InvalidKeyException | InvalidAlgorithmParameterException | IllegalBlockSizeException | BadPaddingException | ShortBufferException ex) {
+            this.cipher.init(Cipher.DECRYPT_MODE, this.key, nextIV());
+            this.cipher.updateAAD(encrypted, encrypted.length - 16, 16);
+        } catch (InvalidKeyException | InvalidAlgorithmParameterException | IllegalBlockSizeException | BadPaddingException | ShortBufferException ex) {
             throw new IOException(ex);
         }
     }
-    
+
     private boolean readChecks() throws IOException {
         if (this.closed) {
             throw new IOException("stream is closed");
         }
-        
+
         if (!this.header) {
             readHeader();
             this.header = true;
         }
-        
+
         if (this.bufferIndex >= this.bufferLength) {
             if (this.eof) {
                 return false;
             }
             readBuffer();
-            if (this.bufferIndex >= this.bufferLength) {
-                return false;
-            }
         }
-        
+
         return true;
     }
-    
+
     @Override
     public int read() throws IOException {
         if (!readChecks()) {
             return -1;
         }
-        
+
         int b = this.buffer[this.bufferIndex] & 0xFF;
         this.bufferIndex++;
-        
+
         return b;
     }
 
@@ -222,11 +210,11 @@ public class EncryptedInputStream extends FilterInputStream {
         if (!readChecks()) {
             return -1;
         }
-        
+
         int toCopy = Math.min(this.bufferLength - this.bufferIndex, len);
         System.arraycopy(this.buffer, this.bufferIndex, b, off, toCopy);
         this.bufferIndex += toCopy;
-        
+
         return toCopy;
     }
 
@@ -238,5 +226,5 @@ public class EncryptedInputStream extends FilterInputStream {
         this.closed = true;
         this.in.close();
     }
-    
+
 }

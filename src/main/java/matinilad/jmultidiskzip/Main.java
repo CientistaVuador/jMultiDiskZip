@@ -26,32 +26,27 @@
  */
 package matinilad.jmultidiskzip;
 
-import java.io.BufferedInputStream;
 import java.io.BufferedOutputStream;
-import java.io.ByteArrayOutputStream;
-import java.io.IOException;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.HashSet;
-import java.util.HexFormat;
 import java.util.List;
 import java.util.Scanner;
-import java.util.Set;
-import java.util.zip.CRC32;
 import java.util.zip.GZIPInputStream;
 import java.util.zip.GZIPOutputStream;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 import java.util.zip.ZipOutputStream;
+import matinilad.jmultidiskzip.api.EncryptedInputStream;
+import matinilad.jmultidiskzip.api.EncryptedOutputStream;
 import matinilad.jmultidiskzip.api.HashAlgorithm;
 import matinilad.jmultidiskzip.api.PartInputStream;
 import matinilad.jmultidiskzip.api.PartOutputStream;
-import matinilad.jmultidiskzip.api.ZipWriter;
+import matinilad.jmultidiskzip.api.ZipCreator;
 
 /**
  *
@@ -80,7 +75,7 @@ public class Main {
         try (PartOutputStream out = new PartOutputStream(outputFile, partSize, hash)) {
             try (GZIPOutputStream gzip = new GZIPOutputStream(out)) {
                 try (ZipOutputStream zip = new ZipOutputStream(gzip, StandardCharsets.UTF_8)) {
-                    ZipWriter writer = new ZipWriter(zip, inputs.toArray(Path[]::new), hash) {
+                    ZipCreator writer = new ZipCreator(zip, inputs.toArray(Path[]::new), hash) {
                         @Override
                         protected void onEntry(ZipEntry entry) {
                             System.out.println(entry.getName());

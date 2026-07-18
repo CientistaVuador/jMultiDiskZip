@@ -26,10 +26,48 @@
  */
 package matinilad.jmultidiskzip.api;
 
+import java.io.IOException;
+import java.nio.file.Path;
+import java.util.Objects;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipInputStream;
+
 /**
  *
  * @author Cien
  */
-public class ZipReader {
+public class ZipExtractor {
+
+    private final ZipInputStream input;
+    private final Path output;
+    
+    private ZipInputStream checksumsZip = null;
+    
+    public ZipExtractor(ZipInputStream input, Path output) {
+        this.input = Objects.requireNonNull(input, "input is null");
+        this.output = Objects.requireNonNull(output, "output is null");
+    }
+    
+    protected void onEntryFailed(ZipEntry entry, Path file, IOException reason) {
+        
+    }
+    
+    protected void onIntegrityFailed(Path file, IOException reason) {
+        
+    }
+    
+    private void verify() {
+        
+    }
+    
+    public void extract(boolean verifyIntegrity) throws IOException {
+        this.checksumsZip = null;
+        Path outputDirectory;
+        
+        
+        if (verifyIntegrity && this.checksumsZip != null) {
+            verify();
+        }
+    }
     
 }
