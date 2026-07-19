@@ -54,13 +54,16 @@ public class PartInputStream extends InputStream {
         String fileNameString = fileName.toString();
 
         String[] fileNameExtensions = fileNameString.split(Pattern.quote("."));
+        if (fileNameExtensions.length <= 1) {
+            throw new IllegalArgumentException("part path has no extensions");
+        }
         String extension = fileNameExtensions[fileNameExtensions.length - 1];
         int partNumber = Integer.parseInt(extension);
         int leadingZeros = extension.length() - Integer.toString(partNumber).length();
         if (leadingZeros != 0) {
             leadingZeros = extension.length();
         }
-
+        
         return new Object[]{
             part.getParent(),
             fileNameString.substring(0, fileNameString.length() - (extension.length() + 1)),

@@ -26,6 +26,7 @@
  */
 package matinilad.jmultidiskzip;
 
+import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -114,6 +115,17 @@ public class Main {
                         protected void onEntry(ZipEntry entry, Path file) {
                             System.out.println(file.toString());
                         }
+
+                        @Override
+                        protected void onIntegrity(ZipEntry entry, Path file) {
+                            System.out.println(file.toString()+" OK!");
+                        }
+
+                        @Override
+                        protected void onIntegrityFailed(ZipEntry entry, Path file, IOException reason) {
+                            System.out.println(entry.getName()+" Failed! "+reason.getMessage());
+                        }
+                        
                     };
                     extractor.extract(true);
                 }
