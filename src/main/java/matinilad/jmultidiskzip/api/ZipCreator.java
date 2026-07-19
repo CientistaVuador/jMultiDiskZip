@@ -195,10 +195,10 @@ public class ZipCreator {
             entry.setCrc(this.crc.getValue());
         }
 
-        try {
-            this.output.putNextEntry(entry);
+        if (isFile) {
+            try {
+                this.output.putNextEntry(entry);
 
-            if (isFile) {
                 try (InputStream in = Files.newInputStream(file)) {
                     byte[] buffer = new byte[16384];
                     int r;
@@ -206,13 +206,13 @@ public class ZipCreator {
                         this.output.write(buffer, 0, r);
                     }
                 }
-            }
 
-            this.output.closeEntry();
-            onEntry(entry);
-        } catch (ZipException ex) {
-            onFileRejected(file, ex);
-            return;
+                this.output.closeEntry();
+                onEntry(entry);
+            } catch (ZipException ex) {
+                onFileRejected(file, ex);
+                return;
+            }
         }
 
         if (this.hash != null) {
@@ -224,20 +224,20 @@ public class ZipCreator {
                 this.crc.update(hashHexBytes, 0, hashHexBytes.length);
                 long crcValue = this.crc.getValue();
 
-                entry = new ZipEntry(entryName + "." + this.hash.getExtension());
+                ZipEntry hashEntry = new ZipEntry(entryName + "." + this.hash.getExtension());
 
-                entry.setMethod(ZipEntry.STORED);
+                hashEntry.setMethod(ZipEntry.STORED);
 
-                entry.setCompressedSize(hashHexBytes.length);
-                entry.setSize(hashHexBytes.length);
-                entry.setCrc(crcValue);
+                hashEntry.setCompressedSize(hashHexBytes.length);
+                hashEntry.setSize(hashHexBytes.length);
+                hashEntry.setCrc(crcValue);
 
                 FileTime time = FileTime.fromMillis(System.currentTimeMillis());
-                entry.setCreationTime(time);
-                entry.setLastModifiedTime(time);
-                entry.setLastAccessTime(time);
+                hashEntry.setCreationTime(time);
+                hashEntry.setLastModifiedTime(time);
+                hashEntry.setLastAccessTime(time);
 
-                this.checksumsZip.putNextEntry(entry);
+                this.checksumsZip.putNextEntry(hashEntry);
                 this.checksumsZip.write(hashHexBytes, 0, hashHexBytes.length);
                 this.checksumsZip.closeEntry();
             } else {
@@ -245,10 +245,20 @@ public class ZipCreator {
                 this.checksumsZip.closeEntry();
             }
         }
-        
+
         if (!isFile) {
             for (Path p : Files.list(file).toArray(Path[]::new)) {
                 writeToZip(root, p);
+            }
+
+            try {
+                this.output.putNextEntry(entry);
+                this.output.closeEntry();
+                
+                onEntry(entry);
+            } catch (ZipException ex) {
+                onFileRejected(file, ex);
+                return;
             }
         }
     }
@@ -306,7 +316,7 @@ public class ZipCreator {
                 }
                 continue;
             }
-            
+
             writeToZip(parent, input);
         }
 

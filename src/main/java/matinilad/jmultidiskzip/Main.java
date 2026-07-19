@@ -26,9 +26,6 @@
  */
 package matinilad.jmultidiskzip;
 
-import java.io.BufferedOutputStream;
-import java.io.FileInputStream;
-import java.io.FileOutputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -41,12 +38,11 @@ import java.util.zip.GZIPOutputStream;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 import java.util.zip.ZipOutputStream;
-import matinilad.jmultidiskzip.api.EncryptedInputStream;
-import matinilad.jmultidiskzip.api.EncryptedOutputStream;
 import matinilad.jmultidiskzip.api.HashAlgorithm;
 import matinilad.jmultidiskzip.api.PartInputStream;
 import matinilad.jmultidiskzip.api.PartOutputStream;
 import matinilad.jmultidiskzip.api.ZipCreator;
+import matinilad.jmultidiskzip.api.ZipExtractor;
 
 /**
  *
@@ -97,9 +93,7 @@ public class Main {
 
         Path inputFile = Path.of(args[0]);
         Path outputDirectory = Path.of(args[1]);
-
-        Files.createDirectories(outputDirectory);
-
+        
         try (PartInputStream in = new PartInputStream(inputFile) {
             @Override
             protected void onWaitingForNextPart(Path requiredPart) {
@@ -115,26 +109,13 @@ public class Main {
         }) {
             try (GZIPInputStream gzip = new GZIPInputStream(in)) {
                 try (ZipInputStream zip = new ZipInputStream(gzip, StandardCharsets.UTF_8)) {
-                    ZipEntry entry;
-                    while ((entry = zip.getNextEntry()) != null) {
-                        Path entryPath = outputDirectory.resolve(entry.getName());
-
-                        System.out.println(entry.getName() + " -> " + entryPath);
-
-                        Files.createDirectories(entryPath.getParent());
-                        if (entry.isDirectory()) {
-                            Files.createDirectory(entryPath);
-                            continue;
+                    ZipExtractor extractor = new ZipExtractor(zip, outputDirectory) {
+                        @Override
+                        protected void onEntry(ZipEntry entry, Path file) {
+                            System.out.println(file.toString());
                         }
-
-                        try (BufferedOutputStream out = new BufferedOutputStream(Files.newOutputStream(entryPath))) {
-                            byte[] buffer = new byte[4096];
-                            int r;
-                            while ((r = zip.read(buffer)) != -1) {
-                                out.write(buffer, 0, r);
-                            }
-                        }
-                    }
+                    };
+                    extractor.extract(true);
                 }
             }
         }
