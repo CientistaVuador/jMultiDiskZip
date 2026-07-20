@@ -42,6 +42,7 @@ import java.util.zip.ZipOutputStream;
 import matinilad.jmultidiskzip.api.HashAlgorithm;
 import matinilad.jmultidiskzip.api.PartInputStream;
 import matinilad.jmultidiskzip.api.PartOutputStream;
+import matinilad.jmultidiskzip.api.ZipChecksumTester;
 import matinilad.jmultidiskzip.api.ZipCreator;
 import matinilad.jmultidiskzip.api.ZipExtractor;
 
@@ -74,8 +75,14 @@ public class Main {
                 try (ZipOutputStream zip = new ZipOutputStream(gzip, StandardCharsets.UTF_8)) {
                     ZipCreator writer = new ZipCreator(zip, inputs.toArray(Path[]::new), hash) {
                         @Override
-                        protected void onEntry(ZipEntry entry) {
-                            System.out.println(entry.getName());
+                        protected void onFile(Path file) {
+                            System.out.println(file.toString());
+                        }
+                        
+                        @Override
+                        protected void onFileError(Path file, IOException reason) {
+                            System.out.println("Error on: "+file.toString());
+                            reason.printStackTrace(System.out);
                         }
                     };
                     writer.create();
@@ -112,22 +119,28 @@ public class Main {
                 try (ZipInputStream zip = new ZipInputStream(gzip, StandardCharsets.UTF_8)) {
                     ZipExtractor extractor = new ZipExtractor(zip, outputDirectory) {
                         @Override
-                        protected void onEntry(ZipEntry entry, Path file) {
+                        protected void onFile(Path file) {
                             System.out.println(file.toString());
                         }
 
                         @Override
-                        protected void onIntegrity(ZipEntry entry, Path file) {
-                            System.out.println(file.toString()+" OK!");
+                        protected void onFileError(Path file, IOException reason) {
+                            System.out.println("Error on: "+file.toString());
+                            reason.printStackTrace(System.out);
                         }
-
+                    };
+                    extractor.extract(new ZipChecksumTester() {
                         @Override
-                        protected void onIntegrityFailed(ZipEntry entry, Path file, IOException reason) {
-                            System.out.println(entry.getName()+" Failed! "+reason.getMessage());
+                        protected void onFile(Path file) {
+                            System.out.println("Verifying "+file.toString());
                         }
                         
-                    };
-                    extractor.extract(true);
+                        @Override
+                        protected void onFileError(Path file, IOException reason) {
+                            System.out.println("Failed "+file.toString());
+                            reason.printStackTrace(System.out);
+                        }
+                    });
                 }
             }
         }

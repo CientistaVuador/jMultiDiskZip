@@ -29,6 +29,7 @@ package matinilad.jmultidiskzip.api;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -40,7 +41,6 @@ import java.util.HexFormat;
 import java.util.Objects;
 import java.util.zip.CRC32;
 import java.util.zip.ZipEntry;
-import java.util.zip.ZipException;
 import java.util.zip.ZipOutputStream;
 
 /**
@@ -52,7 +52,7 @@ public class ZipCreator {
     public static final String CHECKSUMS_ZIP_FILENAME = "jMultiDiskZip_checksums.zip";
 
     private final ZipOutputStream output;
-    private final Path[] inputs;
+    private final ArchivePathStream pathStream;
     private final HashAlgorithm hash;
 
     private MessageDigest digest = null;
@@ -62,21 +62,24 @@ public class ZipCreator {
 
     public ZipCreator(ZipOutputStream output, Path[] inputs, HashAlgorithm hash) {
         this.output = Objects.requireNonNull(output, "output is null");
-        this.inputs = Objects.requireNonNull(inputs, "inputs is null");
-        for (int i = 0; i < inputs.length; i++) {
-            if (inputs[i] == null) {
-                throw new NullPointerException("input at index " + i + " is null");
-            }
-        }
+        this.pathStream = new ArchivePathStream(inputs);
         this.hash = hash;
     }
 
-    protected void onEntry(ZipEntry entry) {
-
+    protected boolean onShouldInterrupt() {
+        return Thread.interrupted();
+    }
+    
+    protected void onFile(Path file) {
+        
     }
 
-    protected void onFileRejected(Path file, IOException reason) {
+    protected void onFileProgress(Path file, boolean crc, long currentBytes, long totalBytes) {
+        
+    }
 
+    protected void onFileError(Path file, IOException reason) {
+        
     }
 
     private void init() throws IOException {
@@ -119,28 +122,28 @@ public class ZipCreator {
         return entryName;
     }
 
-    private void writeToZip(Path root, Path file) throws IOException {
+    private void writeToZip(Path root, Path file) throws IOException, InterruptedException {
         String entryName = createEntryName(root, file);
 
         if (entryName.equals(CHECKSUMS_ZIP_FILENAME)) {
-            onFileRejected(file, new IOException("file named " + CHECKSUMS_ZIP_FILENAME + " is not allowed."));
+            onFileError(file, new IOException("file named " + CHECKSUMS_ZIP_FILENAME + " is not allowed."));
             return;
         }
 
         if (!Files.exists(file)) {
-            onFileRejected(file, new IOException("file does not exists"));
+            onFileError(file, new IOException("file does not exists"));
             return;
         }
 
         if (!Files.isReadable(file)) {
-            onFileRejected(file, new IOException("file is not readable"));
+            onFileError(file, new IOException("file is not readable"));
             return;
         }
 
         boolean isFile = Files.isRegularFile(file);
 
         if (!isFile && !Files.isDirectory(file)) {
-            onFileRejected(file, new IOException("file type is unknown"));
+            onFileError(file, new IOException("file type is unknown"));
             return;
         }
 
@@ -155,32 +158,40 @@ public class ZipCreator {
             entry.setLastModifiedTime(attributes.lastModifiedTime());
             entry.setLastAccessTime(attributes.lastAccessTime());
         } catch (UnsupportedOperationException ex) {
-            //todo
+            //todo?
         }
 
         if (isFile) {
+            long fileSize = Files.size(file);
             long count = 0;
-
+            
             this.crc.reset();
             if (this.digest != null) {
                 this.digest.reset();
             }
 
+            onFileProgress(file, true, count, fileSize);
             try {
                 try (InputStream in = Files.newInputStream(file)) {
                     byte[] buffer = new byte[4096];
                     int r;
                     while ((r = in.read(buffer, 0, buffer.length)) != -1) {
+                        if (onShouldInterrupt()) {
+                            throw new InterruptedException();
+                        }
+                        
                         count += r;
-
+                        
                         this.crc.update(buffer, 0, r);
                         if (this.digest != null) {
                             this.digest.update(buffer, 0, r);
                         }
+                        
+                        onFileProgress(file, true, count, fileSize);
                     }
                 }
             } catch (IOException ex) {
-                onFileRejected(file, ex);
+                onFileError(file, ex);
                 return;
             }
 
@@ -195,25 +206,30 @@ public class ZipCreator {
             entry.setCrc(this.crc.getValue());
         }
 
+        this.output.putNextEntry(entry);
+        
         if (isFile) {
-            try {
-                this.output.putNextEntry(entry);
-
-                try (InputStream in = Files.newInputStream(file)) {
-                    byte[] buffer = new byte[16384];
-                    int r;
-                    while ((r = in.read(buffer, 0, buffer.length)) != -1) {
-                        this.output.write(buffer, 0, r);
+            long fileSize = Files.size(file);
+            long progress = 0;
+            
+            onFileProgress(file, false, progress, fileSize);
+            try (InputStream in = Files.newInputStream(file)) {
+                byte[] buffer = new byte[16384];
+                int r;
+                while ((r = in.read(buffer, 0, buffer.length)) != -1) {
+                    if (onShouldInterrupt()) {
+                        throw new InterruptedException();
                     }
+                    
+                    this.output.write(buffer, 0, r);
+                    progress += r;
+                    
+                    onFileProgress(file, false, progress, fileSize);
                 }
-
-                this.output.closeEntry();
-                onEntry(entry);
-            } catch (ZipException ex) {
-                onFileRejected(file, ex);
-                return;
             }
         }
+        
+        this.output.closeEntry();
 
         if (this.hash != null) {
             if (isFile) {
@@ -243,22 +259,6 @@ public class ZipCreator {
             } else {
                 this.checksumsZip.putNextEntry(entry);
                 this.checksumsZip.closeEntry();
-            }
-        }
-
-        if (!isFile) {
-            for (Path p : Files.list(file).toArray(Path[]::new)) {
-                writeToZip(root, p);
-            }
-
-            try {
-                this.output.putNextEntry(entry);
-                this.output.closeEntry();
-                
-                onEntry(entry);
-            } catch (ZipException ex) {
-                onFileRejected(file, ex);
-                return;
             }
         }
     }
@@ -293,33 +293,47 @@ public class ZipCreator {
         }
     }
 
-    public void create() throws IOException {
+    public void create() throws IOException, InterruptedException {
+        if (onShouldInterrupt()) {
+            throw new InterruptedException();
+        }
         init();
 
-        for (Path input : this.inputs) {
-            try {
-                Path realPath = input.toRealPath();
-                input = realPath;
-            } catch (IOException ex) {
-                onFileRejected(input, ex);
-                continue;
-            }
-
-            Path parent = input.getParent();
-            if (parent == null) {
-                if (!Files.isDirectory(input)) {
-                    onFileRejected(input, new IOException("file has no parent and it's not a directory!"));
-                    continue;
+        try {
+            this.pathStream.stream((e) -> {
+                try {
+                    if (onShouldInterrupt()) {
+                        throw new InterruptedException();
+                    }
+                    
+                    onFile(e.getPath());
+                    
+                    if (e.getError() != null) {
+                        onFileError(e.getPath(), e.getError());
+                        return;
+                    }
+                    
+                    try {
+                        writeToZip(e.getRoot(), e.getPath());
+                    } catch (IOException ex) {
+                        throw new UncheckedIOException(ex);
+                    }
+                } catch (InterruptedException ex) {
+                    throw new RuntimeException(ex);
                 }
-                for (Path p : Files.list(input).toArray(Path[]::new)) {
-                    writeToZip(input, p);
-                }
-                continue;
+            });
+        } catch (UncheckedIOException ex) {
+            throw ex.getCause();
+        } catch (RuntimeException ex) {
+            if (ex.getCause() instanceof InterruptedException interrupted) {
+                throw interrupted;
             }
-
-            writeToZip(parent, input);
+            throw ex;
         }
 
+        if (onShouldInterrupt()) {
+            throw new InterruptedException();
+        }
         doFinal();
     }
 
