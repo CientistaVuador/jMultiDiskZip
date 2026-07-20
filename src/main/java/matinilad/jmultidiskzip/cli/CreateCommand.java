@@ -26,10 +26,128 @@
  */
 package matinilad.jmultidiskzip.cli;
 
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.zip.GZIPOutputStream;
+import java.util.zip.ZipOutputStream;
+import matinilad.jmultidiskzip.api.HashAlgorithm;
+import matinilad.jmultidiskzip.api.PartOutputStream;
+import matinilad.jmultidiskzip.api.ZipCreator;
+
 /**
  *
  * @author Cien
  */
 public class CreateCommand {
     
+    private static void printHelp() {
+        System.out.println("Arguments (Can be used in any order):");
+        System.out.println("-out=outputFile (Output file, must end with .001) [Required]");
+        System.out.println("-partSize=sizeInBytes (Part size, in bytes) [Required]");
+        System.out.println("-hash=SHA-256/SHA-1/MD5/NONE (Hash algorithm) [Default is SHA-256]");
+        System.out.println("-in=inputFile (Adds a input file) [Not Required]");
+        System.out.println("-inDir=inputDirectory (Adds the contents of a directory as input) [Not Required]");
+    }
+    
+    public static void run(String[] args) throws Exception {
+        if (args.length == 0) {
+            printHelp();
+            return;
+        }
+        if (args.length == 1 && args[0].equals("-help")) {
+            printHelp();
+            return;
+        }
+        CLIArguments arguments = new CLIArguments();
+        arguments.load(args);
+        
+        String outputString = arguments.getFirst("-out");
+        if (outputString == null) {
+            System.out.println("A output is required");
+            printHelp();
+            return;
+        }
+        
+        String partSizeString = arguments.getFirst("-partSize");
+        if (partSizeString == null) {
+            System.out.println("Part size is required");
+            printHelp();
+            return;
+        }
+        
+        String hashString = arguments.getFirst("-hash");
+        String[] inputsString = arguments.get("-in");
+        String[] inputDirectoriesString = arguments.get("-inDir");
+        
+        Path output = Path.of(outputString);
+        long partSize = Long.parseLong(partSizeString);
+        
+        HashAlgorithm hash = HashAlgorithm.SHA256;
+        if (hashString != null) {
+            if (hashString.toLowerCase().equals("none")) {
+                hash = null;
+            } else {
+                hash = HashAlgorithm.fromAlgorithm(hashString);
+            }
+        }
+        
+        List<Path> inputs = new ArrayList<>();
+        
+        if (inputsString != null) {
+            for (int i = 0; i < inputsString.length; i++) {
+                inputs.add(Path.of(inputsString[i]));
+            }
+        }
+        
+        if (inputDirectoriesString != null) {
+            for (int i = 0; i < inputDirectoriesString.length; i++) {
+                inputs.addAll(Files.list(Path.of(inputDirectoriesString[i])).toList());
+            }
+        }
+        
+        new CreateCommand(output, partSize, hash, inputs.toArray(Path[]::new)).create();
+    }
+    
+    private final Path outputFile;
+    private final long partSize;
+    private final HashAlgorithm hash;
+    private final Path[] inputs;
+    
+    public CreateCommand(Path outputFile, long partSize, HashAlgorithm hash, Path[] inputs) {
+        this.outputFile = outputFile;
+        this.partSize = partSize;
+        this.hash = hash;
+        this.inputs = inputs;
+    }
+
+    public void create() throws IOException, InterruptedException {
+        if (this.outputFile.getParent() != null) {
+            Files.createDirectories(this.outputFile.getParent());
+        }
+        
+        try (PartOutputStream out = new PartOutputStream(this.outputFile, this.partSize, this.hash)) {
+            try (GZIPOutputStream gzip = new GZIPOutputStream(out)) {
+                try (ZipOutputStream zip = new ZipOutputStream(gzip, StandardCharsets.UTF_8)) {
+                    ZipCreator writer = new ZipCreator(zip, this.inputs, this.hash) {
+                        @Override
+                        protected void onFile(Path file) {
+                            System.out.println(file.toString());
+                        }
+
+                        @Override
+                        protected void onFileError(Path file, IOException reason) {
+                            System.out.println("Error on: " + file.toString());
+                            reason.printStackTrace(System.out);
+                        }
+                    };
+                    writer.create();
+                }
+            }
+        }
+    }
+
 }

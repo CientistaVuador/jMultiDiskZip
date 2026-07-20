@@ -114,12 +114,19 @@ public class EncryptedInputStream extends FilterInputStream {
                 SecretKeyFactory factory = SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256");
                 SecretKey secretKey = new SecretKeySpec(factory.generateSecret(spec).getEncoded(), "HmacSHA256");
 
+                byte[] signKeyInfo = "sign".getBytes(StandardCharsets.UTF_8);
+                byte[] encryptKeyInfo = "encrypt".getBytes(StandardCharsets.UTF_8);
+                
                 mac.init(secretKey);
 
+                mac.update(ByteBuffer.allocate(4).putInt(signKeyInfo.length).array());
+                mac.update(signKeyInfo);
                 mac.update((byte) 0x01);
                 signKey = new SecretKeySpec(mac.doFinal(), "HmacSHA256");
 
                 mac.update(signKey.getEncoded());
+                mac.update(ByteBuffer.allocate(4).putInt(encryptKeyInfo.length).array());
+                mac.update(encryptKeyInfo);
                 mac.update((byte) 0x02);
                 encryptionKey = new SecretKeySpec(mac.doFinal(), "AES");
             } finally {

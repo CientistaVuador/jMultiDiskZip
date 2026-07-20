@@ -29,6 +29,7 @@ package matinilad.jmultidiskzip.api;
 import java.io.FilterOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
+import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.security.InvalidAlgorithmParameterException;
 import java.security.InvalidKeyException;
@@ -94,21 +95,28 @@ public class EncryptedOutputStream extends FilterOutputStream {
             Mac mac = Mac.getInstance("HmacSHA256");
 
             SecretKey signKey;
-            SecretKey encryptionKey;
+            SecretKey encryptKey;
 
             PBEKeySpec spec = new PBEKeySpec(this.password, salt, 1_000_000, 256);
             try {
                 SecretKeyFactory factory = SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256");
                 SecretKey secretKey = new SecretKeySpec(factory.generateSecret(spec).getEncoded(), "HmacSHA256");
-
+                
+                byte[] signKeyInfo = "sign".getBytes(StandardCharsets.UTF_8);
+                byte[] encryptKeyInfo = "encrypt".getBytes(StandardCharsets.UTF_8);
+                
                 mac.init(secretKey);
-
+                
+                mac.update(ByteBuffer.allocate(4).putInt(signKeyInfo.length).array());
+                mac.update(signKeyInfo);
                 mac.update((byte) 0x01);
                 signKey = new SecretKeySpec(mac.doFinal(), "HmacSHA256");
                 
                 mac.update(signKey.getEncoded());
+                mac.update(ByteBuffer.allocate(4).putInt(encryptKeyInfo.length).array());
+                mac.update(encryptKeyInfo);
                 mac.update((byte) 0x02);
-                encryptionKey = new SecretKeySpec(mac.doFinal(), "AES");
+                encryptKey = new SecretKeySpec(mac.doFinal(), "AES");
             } finally {
                 Arrays.fill(this.password, '\0');
                 spec.clearPassword();
@@ -120,7 +128,7 @@ public class EncryptedOutputStream extends FilterOutputStream {
             byte[] signedMagic = mac.doFinal();
             this.out.write(signedMagic);
             
-            this.key = encryptionKey;
+            this.key = encryptKey;
             
             this.cipher = Cipher.getInstance("AES/GCM/NoPadding");
             this.cipher.init(Cipher.ENCRYPT_MODE, this.key, nextIV());

@@ -26,10 +26,43 @@
  */
 package matinilad.jmultidiskzip.cli;
 
+import java.util.Arrays;
+
 /**
  *
  * @author Cien
  */
 public class CLInterface {
     
+    private static void printHelp() {
+        System.out.println("Available Commands:");
+        System.out.println("-create (Creates a ZIP file with multiple volumes)");
+        System.out.println("-extract (Extracts a ZIP file with multiple volumes)");
+    }
+    
+    public static void run(String[] args) throws Exception {
+        if (args.length == 0) {
+            printHelp();
+            return;
+        }
+        switch (args[0]) {
+            case "-create" -> {
+                CreateCommand.run(Arrays.copyOfRange(args, 1, args.length));
+            }
+            case "-extract" -> {
+                ExtractCommand.run(Arrays.copyOfRange(args, 1, args.length));
+            }
+            default -> {
+                if (!args[0].equals("-help")) {
+                    System.out.println("Unknown Command: "+args[0]);
+                }
+                printHelp();
+            }
+        }
+    }
+
+    private CLInterface() {
+
+    }
+
 }

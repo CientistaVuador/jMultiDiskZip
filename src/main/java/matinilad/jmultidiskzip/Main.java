@@ -26,25 +26,8 @@
  */
 package matinilad.jmultidiskzip;
 
-import java.io.IOException;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.List;
-import java.util.Scanner;
-import java.util.zip.GZIPInputStream;
-import java.util.zip.GZIPOutputStream;
-import java.util.zip.ZipEntry;
-import java.util.zip.ZipInputStream;
-import java.util.zip.ZipOutputStream;
-import matinilad.jmultidiskzip.api.HashAlgorithm;
-import matinilad.jmultidiskzip.api.PartInputStream;
-import matinilad.jmultidiskzip.api.PartOutputStream;
-import matinilad.jmultidiskzip.api.ZipChecksumTester;
-import matinilad.jmultidiskzip.api.ZipCreator;
-import matinilad.jmultidiskzip.api.ZipExtractor;
+import matinilad.jmultidiskzip.cli.CLInterface;
 
 /**
  *
@@ -52,115 +35,25 @@ import matinilad.jmultidiskzip.api.ZipExtractor;
  */
 public class Main {
     
-    private static void create(String[] args) throws Exception {
-        if (args.length < 3) {
-            System.out.println("Usage: [Output File (Must end with .001)] [Part Size] [SHA-256/SHA-1/MD5/None] [Input 1] [Input 2] ...");
-            return;
-        }
-        Path outputFile = Path.of(args[0]).toAbsolutePath();
-        long partSize = Long.parseLong(args[1]);
-        HashAlgorithm hash = HashAlgorithm.fromAlgorithm(args[2]);
-
-        if (outputFile.getParent() != null) {
-            Files.createDirectories(outputFile.getParent());
-        }
-        
-        List<Path> inputs = new ArrayList<>();
-        for (int i = 3; i < args.length; i++) {
-            inputs.add(Path.of(args[i]));
-        }
-        
-        try (PartOutputStream out = new PartOutputStream(outputFile, partSize, hash)) {
-            try (GZIPOutputStream gzip = new GZIPOutputStream(out)) {
-                try (ZipOutputStream zip = new ZipOutputStream(gzip, StandardCharsets.UTF_8)) {
-                    ZipCreator writer = new ZipCreator(zip, inputs.toArray(Path[]::new), hash) {
-                        @Override
-                        protected void onFile(Path file) {
-                            System.out.println(file.toString());
-                        }
-                        
-                        @Override
-                        protected void onFileError(Path file, IOException reason) {
-                            System.out.println("Error on: "+file.toString());
-                            reason.printStackTrace(System.out);
-                        }
-                    };
-                    writer.create();
-                }
-            }
-        }
+    private static void printHelp() {
+        System.out.println("Available Interfaces:");
+        System.out.println("-cli (Create and Extract)");
     }
-
-    private static void extract(String[] args) throws Exception {
-        if (args.length != 2) {
-            System.out.println("Usage: [Input File (Must Start With .001)] [Output Directory]");
-            return;
-        }
-
-        Scanner scanner = new Scanner(System.in);
-
-        Path inputFile = Path.of(args[0]);
-        Path outputDirectory = Path.of(args[1]);
-        
-        try (PartInputStream in = new PartInputStream(inputFile) {
-            @Override
-            protected void onWaitingForNextPart(Path requiredPart) {
-                System.out.println("Please insert the directory for the next part: " + requiredPart.getFileName().toString());
-                System.out.print(">");
-                String input = scanner.nextLine();
-                if (input.isEmpty()) {
-                    continueSignal(null, false);
-                    return;
-                }
-                continueSignal(Path.of(input), false);
-            }
-        }) {
-            try (GZIPInputStream gzip = new GZIPInputStream(in)) {
-                try (ZipInputStream zip = new ZipInputStream(gzip, StandardCharsets.UTF_8)) {
-                    ZipExtractor extractor = new ZipExtractor(zip, outputDirectory) {
-                        @Override
-                        protected void onFile(Path file) {
-                            System.out.println(file.toString());
-                        }
-
-                        @Override
-                        protected void onFileError(Path file, IOException reason) {
-                            System.out.println("Error on: "+file.toString());
-                            reason.printStackTrace(System.out);
-                        }
-                    };
-                    extractor.extract(new ZipChecksumTester() {
-                        @Override
-                        protected void onFile(Path file) {
-                            System.out.println("Verifying "+file.toString());
-                        }
-                        
-                        @Override
-                        protected void onFileError(Path file, IOException reason) {
-                            System.out.println("Failed "+file.toString());
-                            reason.printStackTrace(System.out);
-                        }
-                    });
-                }
-            }
-        }
-    }
-
+    
     public static void main(String[] args) throws Exception {
         if (args.length == 0) {
-            System.out.println("Usage: -create or -extract");
+            printHelp();
             return;
         }
         switch (args[0]) {
-            case "-create" -> {
-                create(Arrays.copyOfRange(args, 1, args.length));
-            }
-            case "-extract" -> {
-                extract(Arrays.copyOfRange(args, 1, args.length));
+            case "-cli" -> {
+                CLInterface.run(Arrays.copyOfRange(args, 1, args.length));
             }
             default -> {
-                System.out.println("Usage: -create or -extract");
-                return;
+                if (!args[0].equals("-help")) {
+                    System.out.println("Unknown Interface: "+args[0]);
+                }
+                printHelp();
             }
         }
     }

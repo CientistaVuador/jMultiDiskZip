@@ -26,10 +26,82 @@
  */
 package matinilad.jmultidiskzip.cli;
 
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
+import java.util.Scanner;
+import java.util.zip.GZIPInputStream;
+import java.util.zip.ZipInputStream;
+import matinilad.jmultidiskzip.api.PartInputStream;
+import matinilad.jmultidiskzip.api.ZipChecksumTester;
+import matinilad.jmultidiskzip.api.ZipExtractor;
+
 /**
  *
  * @author Cien
  */
 public class ExtractCommand {
-    
+
+    public static void run(String[] args) throws Exception {
+        if (args.length != 2) {
+            System.out.println("Usage: [Input File (Must Start With .001)] [Output Directory]");
+            return;
+        }
+        new ExtractCommand().extract(args);
+    }
+
+    public ExtractCommand() {
+
+    }
+
+    public void extract(String[] args) throws IOException, InterruptedException {
+        Scanner scanner = new Scanner(System.in);
+
+        Path inputFile = Path.of(args[0]);
+        Path outputDirectory = Path.of(args[1]);
+
+        try (PartInputStream in = new PartInputStream(inputFile) {
+            @Override
+            protected void onWaitingForNextPart(Path requiredPart) {
+                System.out.println("Please insert the directory for the next part: " + requiredPart.getFileName().toString());
+                System.out.print(">");
+                String input = scanner.nextLine();
+                if (input.isEmpty()) {
+                    continueSignal(null, false);
+                    return;
+                }
+                continueSignal(Path.of(input), false);
+            }
+        }) {
+            try (GZIPInputStream gzip = new GZIPInputStream(in)) {
+                try (ZipInputStream zip = new ZipInputStream(gzip, StandardCharsets.UTF_8)) {
+                    ZipExtractor extractor = new ZipExtractor(zip, outputDirectory) {
+                        @Override
+                        protected void onFile(Path file) {
+                            System.out.println(file.toString());
+                        }
+
+                        @Override
+                        protected void onFileError(Path file, IOException reason) {
+                            System.out.println("Error on: " + file.toString());
+                            reason.printStackTrace(System.out);
+                        }
+                    };
+                    extractor.extract(new ZipChecksumTester() {
+                        @Override
+                        protected void onFile(Path file) {
+                            System.out.println("Verifying " + file.toString());
+                        }
+
+                        @Override
+                        protected void onFileError(Path file, IOException reason) {
+                            System.out.println("Failed " + file.toString());
+                            reason.printStackTrace(System.out);
+                        }
+                    });
+                }
+            }
+        }
+    }
+
 }

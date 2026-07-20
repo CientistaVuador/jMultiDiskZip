@@ -1,0 +1,97 @@
+/*
+ * This is free and unencumbered software released into the public domain.
+ *
+ * Anyone is free to copy, modify, publish, use, compile, sell, or
+ * distribute this software, either in source code form or as a compiled
+ * binary, for any purpose, commercial or non-commercial, and by any
+ * means.
+ *
+ * In jurisdictions that recognize copyright laws, the author or authors
+ * of this software dedicate any and all copyright interest in the
+ * software to the public domain. We make this dedication for the benefit
+ * of the public at large and to the detriment of our heirs and
+ * successors. We intend this dedication to be an overt act of
+ * relinquishment in perpetuity of all present and future rights to this
+ * software under copyright law.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+ * EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+ * MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+ * IN NO EVENT SHALL THE AUTHORS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+ * OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ * ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+ * OTHER DEALINGS IN THE SOFTWARE.
+ *
+ * For more information, please refer to <https://unlicense.org>
+ */
+package matinilad.jmultidiskzip.cli;
+
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+
+/**
+ *
+ * @author Cien
+ */
+public class CLIArguments {
+    
+    private final Map<String, List<String>> map = new HashMap<>();
+    
+    public CLIArguments() {
+        
+    }
+    
+    public void load(String[] args) {
+        Objects.requireNonNull(args, "args is null");
+        
+        for (int i = 0; i < args.length; i++) {
+            String arg = args[i];
+            Objects.requireNonNull(arg, "arg at index "+i+" is null");
+            
+            if (arg.isEmpty()) {
+                continue;
+            }
+            
+            String[] split = arg.split("=", 2);
+            
+            String key = split[0];
+            String value = null;
+            if (split.length == 2) {
+                value = split[1];
+            }
+            
+            List<String> list = this.map.get(key);
+            if (list == null) {
+                list = new ArrayList<>();
+                this.map.put(key, list);
+            }
+            
+            if (value != null) {
+                list.add(value);
+            }
+        }
+    }
+    
+    public String[] get(String name) {
+        List<String> list = this.map.get(name);
+        if (list == null) {
+            return null;
+        }
+        return list.toArray(String[]::new);
+    }
+    
+    public String getFirst(String name) {
+        List<String> list = this.map.get(name);
+        if (list == null || list.isEmpty()) {
+            return null;
+        }
+        return list.get(0);
+    }
+    
+    public boolean contains(String name) {
+        return this.map.containsKey(name);
+    }
+}
