@@ -42,25 +42,63 @@ import matinilad.jmultidiskzip.api.ZipExtractor;
  */
 public class ExtractCommand {
 
+    private static void printHelp() {
+        System.out.println("Arguments (Can be used in any order):");
+        System.out.println("-in=partOne (Input part 001) [Required]");
+        System.out.println("-out=directory (Output directory) [Required]");
+        System.out.println("-verify=true/false (Verify files after extraction) [Not required, Default is true]");
+    }
+
     public static void run(String[] args) throws Exception {
-        if (args.length != 2) {
-            System.out.println("Usage: [Input File (Must Start With .001)] [Output Directory]");
+        if (args.length == 0) {
+            printHelp();
             return;
         }
-        new ExtractCommand().extract(args);
+        if (args.length == 1 && args[0].equals("-help")) {
+            printHelp();
+            return;
+        }
+        CLIArguments arguments = new CLIArguments();
+        arguments.load(args);
+
+        String inputString = arguments.getFirst("-in");
+        if (inputString == null) {
+            System.out.println("Input is required");
+            printHelp();
+            return;
+        }
+        Path input = Path.of(inputString);
+
+        String outputString = arguments.getFirst("-out");
+        if (outputString == null) {
+            System.out.println("Output is required");
+            printHelp();
+            return;
+        }
+        Path output = Path.of(outputString);
+
+        boolean verify = true;
+        if (arguments.contains("-verify")) {
+            verify = Boolean.parseBoolean(arguments.getFirst("-verify"));
+        }
+
+        new ExtractCommand(input, output, verify).extract();
     }
 
-    public ExtractCommand() {
+    private final Path input;
+    private final Path output;
+    private final boolean verify;
 
+    public ExtractCommand(Path input, Path output, boolean verify) {
+        this.input = input;
+        this.output = output;
+        this.verify = verify;
     }
 
-    public void extract(String[] args) throws IOException, InterruptedException {
+    public void extract() throws IOException, InterruptedException {
         Scanner scanner = new Scanner(System.in);
 
-        Path inputFile = Path.of(args[0]);
-        Path outputDirectory = Path.of(args[1]);
-
-        try (PartInputStream in = new PartInputStream(inputFile) {
+        try (PartInputStream in = new PartInputStream(this.input) {
             @Override
             protected void onWaitingForNextPart(Path requiredPart) {
                 System.out.println("Please insert the directory for the next part: " + requiredPart.getFileName().toString());
@@ -75,7 +113,7 @@ public class ExtractCommand {
         }) {
             try (GZIPInputStream gzip = new GZIPInputStream(in)) {
                 try (ZipInputStream zip = new ZipInputStream(gzip, StandardCharsets.UTF_8)) {
-                    ZipExtractor extractor = new ZipExtractor(zip, outputDirectory) {
+                    ZipExtractor extractor = new ZipExtractor(zip, this.output) {
                         @Override
                         protected void onFile(Path file) {
                             System.out.println(file.toString());
@@ -87,18 +125,22 @@ public class ExtractCommand {
                             reason.printStackTrace(System.out);
                         }
                     };
-                    extractor.extract(new ZipChecksumTester() {
-                        @Override
-                        protected void onFile(Path file) {
-                            System.out.println("Verifying " + file.toString());
-                        }
+                    ZipChecksumTester tester = null;
+                    if (this.verify) {
+                        tester = new ZipChecksumTester() {
+                            @Override
+                            protected void onFile(Path file) {
+                                System.out.println("Verifying " + file.toString());
+                            }
 
-                        @Override
-                        protected void onFileError(Path file, IOException reason) {
-                            System.out.println("Failed " + file.toString());
-                            reason.printStackTrace(System.out);
-                        }
-                    });
+                            @Override
+                            protected void onFileError(Path file, IOException reason) {
+                                System.out.println("Failed " + file.toString());
+                                reason.printStackTrace(System.out);
+                            }
+                        };
+                    }
+                    extractor.extract(tester);
                 }
             }
         }

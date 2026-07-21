@@ -71,6 +71,7 @@ public class CreateCommand {
             printHelp();
             return;
         }
+        Path output = Path.of(outputString);
         
         String partSizeString = arguments.getFirst("-partSize");
         if (partSizeString == null) {
@@ -78,13 +79,11 @@ public class CreateCommand {
             printHelp();
             return;
         }
+        long partSize = Long.parseLong(partSizeString);
         
         String hashString = arguments.getFirst("-hash");
         String[] inputsString = arguments.get("-in");
         String[] inputDirectoriesString = arguments.get("-inDir");
-        
-        Path output = Path.of(outputString);
-        long partSize = Long.parseLong(partSizeString);
         
         HashAlgorithm hash = HashAlgorithm.SHA256;
         if (hashString != null) {
