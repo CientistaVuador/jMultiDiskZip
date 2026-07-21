@@ -35,7 +35,6 @@ import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.HexFormat;
-import static matinilad.jmultidiskzip.api.PartInputStream.splitPathData;
 
 /**
  *
@@ -57,7 +56,7 @@ public class PartOutputStream extends OutputStream {
     private String partString = "";
     
     public PartOutputStream(Path partOne, long partSize, HashAlgorithm hashAlgorithm) {
-        Object[] pathData = splitPathData(partOne);
+        Object[] pathData = PartInputStream.splitPathData(partOne);
         
         this.directory = (Path) pathData[0];
         this.name = (String) pathData[1];

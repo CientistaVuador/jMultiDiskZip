@@ -130,8 +130,8 @@ public class PartInputStream extends InputStream {
 
             byte[] resultHash = this.partDigest.digest();
             if (!MessageDigest.isEqual(resultHash, this.partHash)) {
-                //todo
-                throw new IOException("checksum failed");
+                HexFormat hex = HexFormat.of();
+                throw new IOException("checksum failed for part "+this.partNumber+", expected "+hex.formatHex(this.partHash)+" found "+hex.formatHex(resultHash));
             }
         }
 
@@ -194,7 +194,7 @@ public class PartInputStream extends InputStream {
                     }
                     break;
                 } catch (IllegalArgumentException ex) {
-                    //todo
+                    //todo?
                 }
             }
         }
@@ -260,6 +260,7 @@ public class PartInputStream extends InputStream {
             return;
         }
         closePart();
+        continueSignal(null, true);
         this.closed = true;
     }
 

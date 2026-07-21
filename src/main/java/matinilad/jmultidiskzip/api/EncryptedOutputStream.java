@@ -29,7 +29,6 @@ package matinilad.jmultidiskzip.api;
 import java.io.FilterOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
-import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.security.InvalidAlgorithmParameterException;
 import java.security.InvalidKeyException;
@@ -55,8 +54,8 @@ import javax.crypto.spec.SecretKeySpec;
  */
 public class EncryptedOutputStream extends FilterOutputStream {
 
-    public static final String MAGIC = "jMultiDiskZip Encrypted Stream v1";
-    public static final int BUFFER_SIZE = 1 + 65536;
+    public static final String MAGIC = "EncryptedStream1";
+    public static final int BUFFER_SIZE = 65535;
 
     private final char[] password;
 
@@ -66,9 +65,12 @@ public class EncryptedOutputStream extends FilterOutputStream {
     private Cipher cipher = null;
     private long nonce = 0;
     
-    private final byte[] buffer = new byte[BUFFER_SIZE];
-    private int bufferIndex = 1;
-
+    private byte[] lastBuffer = new byte[BUFFER_SIZE];
+    private int lastBufferIndex = 0;
+    
+    private byte[] currentBuffer = new byte[BUFFER_SIZE];
+    private int currentBufferIndex = 0;
+    
     private boolean closed = false;
 
     public EncryptedOutputStream(OutputStream out, char[] password) {
@@ -102,19 +104,12 @@ public class EncryptedOutputStream extends FilterOutputStream {
                 SecretKeyFactory factory = SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256");
                 SecretKey secretKey = new SecretKeySpec(factory.generateSecret(spec).getEncoded(), "HmacSHA256");
                 
-                byte[] signKeyInfo = "sign".getBytes(StandardCharsets.UTF_8);
-                byte[] encryptKeyInfo = "encrypt".getBytes(StandardCharsets.UTF_8);
-                
                 mac.init(secretKey);
                 
-                mac.update(ByteBuffer.allocate(4).putInt(signKeyInfo.length).array());
-                mac.update(signKeyInfo);
                 mac.update((byte) 0x01);
                 signKey = new SecretKeySpec(mac.doFinal(), "HmacSHA256");
                 
                 mac.update(signKey.getEncoded());
-                mac.update(ByteBuffer.allocate(4).putInt(encryptKeyInfo.length).array());
-                mac.update(encryptKeyInfo);
                 mac.update((byte) 0x02);
                 encryptKey = new SecretKeySpec(mac.doFinal(), "AES");
             } finally {
@@ -139,15 +134,31 @@ public class EncryptedOutputStream extends FilterOutputStream {
             throw new IOException(ex);
         }
     }
-
-    private void writeBuffer(boolean lastBuffer) throws IOException {
+    
+    private void pushBuffer() throws IOException {
         try {
-            this.buffer[0] = (lastBuffer ? (byte) 0x01 : (byte) 0x00);
+            byte[] shouldBeEmpty = this.cipher.update(new byte[] {
+                (byte) (this.currentBufferIndex >>> 8),
+                (byte) (this.currentBufferIndex >>> 0)
+            });
+            byte[] encrypted = this.cipher.doFinal(this.lastBuffer, 0, this.lastBufferIndex);
             
-            byte[] encrypted = this.cipher.doFinal(this.buffer, 0, this.bufferIndex);
+            if (shouldBeEmpty != null && shouldBeEmpty.length > 0) {
+                this.out.write(shouldBeEmpty);
+            }
             this.out.write(encrypted);
             
-            this.bufferIndex = 1;
+            int a = this.lastBufferIndex;
+            int b = this.currentBufferIndex;
+            this.lastBufferIndex = b;
+            this.currentBufferIndex = a;
+            
+            byte[] arrayA = this.lastBuffer;
+            byte[] arrayB = this.currentBuffer;
+            this.lastBuffer = arrayB;
+            this.currentBuffer = arrayA;
+            
+            this.currentBufferIndex = 0;
             
             this.cipher.init(Cipher.ENCRYPT_MODE, this.key, nextIV());
             this.cipher.updateAAD(encrypted, encrypted.length - 16, 16);
@@ -155,7 +166,7 @@ public class EncryptedOutputStream extends FilterOutputStream {
             throw new IOException(ex);
         }
     }
-
+    
     private void writeChecks() throws IOException {
         if (this.closed) {
             throw new IOException("stream is closed");
@@ -171,11 +182,11 @@ public class EncryptedOutputStream extends FilterOutputStream {
     public void write(int b) throws IOException {
         writeChecks();
 
-        if (this.bufferIndex >= this.buffer.length) {
-            writeBuffer(false);
+        if (this.currentBufferIndex >= this.currentBuffer.length) {
+            pushBuffer();
         }
-        this.buffer[this.bufferIndex] = (byte) b;
-        this.bufferIndex++;
+        this.currentBuffer[this.currentBufferIndex] = (byte) b;
+        this.currentBufferIndex++;
     }
 
     @Override
@@ -187,12 +198,12 @@ public class EncryptedOutputStream extends FilterOutputStream {
         int to = off + len;
 
         while (from < to) {
-            if (this.bufferIndex >= this.buffer.length) {
-                writeBuffer(false);
+            if (this.currentBufferIndex >= this.currentBuffer.length) {
+                pushBuffer();
             }
-            int toCopy = Math.min(to - from, this.buffer.length - this.bufferIndex);
-            System.arraycopy(b, from, this.buffer, this.bufferIndex, toCopy);
-            this.bufferIndex += toCopy;
+            int toCopy = Math.min(to - from, this.currentBuffer.length - this.currentBufferIndex);
+            System.arraycopy(b, from, this.currentBuffer, this.currentBufferIndex, toCopy);
+            this.currentBufferIndex += toCopy;
             from += toCopy;
         }
     }
@@ -207,8 +218,11 @@ public class EncryptedOutputStream extends FilterOutputStream {
             writeHeader();
             this.header = true;
         }
-        writeBuffer(true);
-
+        if (this.currentBufferIndex != 0) {
+            pushBuffer();
+        }
+        pushBuffer();
+        
         this.closed = true;
         this.out.close();
     }

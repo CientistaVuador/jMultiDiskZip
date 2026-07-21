@@ -30,7 +30,6 @@ import java.io.EOFException;
 import java.io.FilterInputStream;
 import java.io.IOException;
 import java.io.InputStream;
-import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.security.InvalidAlgorithmParameterException;
 import java.security.InvalidKeyException;
@@ -46,7 +45,6 @@ import javax.crypto.Mac;
 import javax.crypto.NoSuchPaddingException;
 import javax.crypto.SecretKey;
 import javax.crypto.SecretKeyFactory;
-import javax.crypto.ShortBufferException;
 import javax.crypto.spec.GCMParameterSpec;
 import javax.crypto.spec.PBEKeySpec;
 import javax.crypto.spec.SecretKeySpec;
@@ -75,11 +73,12 @@ public class EncryptedInputStream extends FilterInputStream {
     private Cipher cipher = null;
     private long nonce = 0;
 
+    private int nextBufferSize = -1;
+    
     private final byte[] buffer = new byte[EncryptedOutputStream.BUFFER_SIZE];
     private int bufferLength = 0;
     private int bufferIndex = 0;
 
-    private boolean eof = false;
     private boolean closed = false;
 
     public EncryptedInputStream(InputStream in, char[] password) {
@@ -114,19 +113,12 @@ public class EncryptedInputStream extends FilterInputStream {
                 SecretKeyFactory factory = SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256");
                 SecretKey secretKey = new SecretKeySpec(factory.generateSecret(spec).getEncoded(), "HmacSHA256");
 
-                byte[] signKeyInfo = "sign".getBytes(StandardCharsets.UTF_8);
-                byte[] encryptKeyInfo = "encrypt".getBytes(StandardCharsets.UTF_8);
-                
                 mac.init(secretKey);
 
-                mac.update(ByteBuffer.allocate(4).putInt(signKeyInfo.length).array());
-                mac.update(signKeyInfo);
                 mac.update((byte) 0x01);
                 signKey = new SecretKeySpec(mac.doFinal(), "HmacSHA256");
 
                 mac.update(signKey.getEncoded());
-                mac.update(ByteBuffer.allocate(4).putInt(encryptKeyInfo.length).array());
-                mac.update(encryptKeyInfo);
                 mac.update((byte) 0x02);
                 encryptionKey = new SecretKeySpec(mac.doFinal(), "AES");
             } finally {
@@ -157,25 +149,36 @@ public class EncryptedInputStream extends FilterInputStream {
             throw new IOException(ex);
         }
     }
-
+    
     private void readBuffer() throws IOException {
         try {
-            byte[] encrypted = this.in.readNBytes(this.buffer.length + 16);
-            if (encrypted.length == 0) {
-                throw new EOFException("expected last buffer, found nothing");
+            int encryptedSize = 2 + this.nextBufferSize + 16;
+            byte[] encrypted = this.in.readNBytes(encryptedSize);
+            if (encrypted.length != encryptedSize) {
+                throw new EOFException("invalid buffer size! expected "+encryptedSize);
             }
-            if (encrypted.length < 17) {
-                throw new EOFException("buffer must be at least 17 bytes!");
-            }
-            this.bufferLength = this.cipher.doFinal(encrypted, 0, encrypted.length, this.buffer, 0);
-            this.bufferIndex = 1;
             
-            this.eof = (this.buffer[0] == 0x01);
+            byte[] decrypted = this.cipher.doFinal(encrypted);
+            this.nextBufferSize = ((decrypted[0] & 0xFF) << 8) | ((decrypted[1] & 0xFF) << 0);
+            
+            this.bufferLength = decrypted.length - 2;
+            this.bufferIndex = 0;
+            System.arraycopy(decrypted, 2, this.buffer, 0, this.bufferLength);
             
             this.cipher.init(Cipher.DECRYPT_MODE, this.key, nextIV());
             this.cipher.updateAAD(encrypted, encrypted.length - 16, 16);
-        } catch (InvalidKeyException | InvalidAlgorithmParameterException | IllegalBlockSizeException | BadPaddingException | ShortBufferException ex) {
+        } catch (InvalidKeyException | InvalidAlgorithmParameterException | IllegalBlockSizeException | BadPaddingException ex) {
             throw new IOException(ex);
+        }
+    }
+    
+    private void readBufferChecked() throws IOException {
+        if (this.nextBufferSize == -1) {
+            this.nextBufferSize = 0;
+            readBuffer();
+        }
+        if (this.nextBufferSize != 0) {
+            readBuffer();
         }
     }
 
@@ -190,10 +193,13 @@ public class EncryptedInputStream extends FilterInputStream {
         }
 
         if (this.bufferIndex >= this.bufferLength) {
-            if (this.eof) {
+            if (this.nextBufferSize == 0) {
                 return false;
             }
-            readBuffer();
+            readBufferChecked();
+            if (this.bufferLength == 0) {
+                return false;
+            }
         }
 
         return true;
