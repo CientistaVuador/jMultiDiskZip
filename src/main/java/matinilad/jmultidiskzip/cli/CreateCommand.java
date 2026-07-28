@@ -32,11 +32,13 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.zip.GZIPOutputStream;
 import java.util.zip.ZipOutputStream;
-import matinilad.jmultidiskzip.api.HashAlgorithm;
 import matinilad.jmultidiskzip.api.PartOutputStream;
 import matinilad.jmultidiskzip.api.ZipCreator;
+import matinilad.jmultidiskzip.api.checksum.ChecksumAlgorithm;
+import matinilad.jmultidiskzip.api.checksum.ChecksumAlgorithmFactory;
+import org.tukaani.xz.LZMA2Options;
+import org.tukaani.xz.XZOutputStream;
 
 /**
  *
@@ -48,7 +50,7 @@ public class CreateCommand {
         System.out.println("Arguments (Can be used in any order):");
         System.out.println("-out=outputFile (Output file, must end with .001) [Required]");
         System.out.println("-partSize=sizeInBytes (Part size, in bytes) [Required]");
-        System.out.println("-hash=SHA-256/SHA-1/MD5/NONE (Hash algorithm) [Default is SHA-256]");
+        System.out.println("-hash=SHA-256/SHA-1/MD5/CRC32/NONE (Hash algorithm) [Default is SHA-256]");
         System.out.println("-in=inputFile (Adds a input file) [Not Required]");
         System.out.println("-inDir=inputDirectory (Adds the contents of a directory as input) [Not Required]");
     }
@@ -85,12 +87,12 @@ public class CreateCommand {
         String[] inputsString = arguments.get("-in");
         String[] inputDirectoriesString = arguments.get("-inDir");
         
-        HashAlgorithm hash = HashAlgorithm.SHA256;
+        ChecksumAlgorithm hash = ChecksumAlgorithmFactory.getDefault().fromName("SHA-256");
         if (hashString != null) {
             if (hashString.toLowerCase().equals("none")) {
                 hash = null;
             } else {
-                hash = HashAlgorithm.fromAlgorithm(hashString);
+                hash = ChecksumAlgorithmFactory.getDefault().fromName(hashString);
             }
         }
         
@@ -113,10 +115,10 @@ public class CreateCommand {
     
     private final Path outputFile;
     private final long partSize;
-    private final HashAlgorithm hash;
+    private final ChecksumAlgorithm hash;
     private final Path[] inputs;
     
-    public CreateCommand(Path outputFile, long partSize, HashAlgorithm hash, Path[] inputs) {
+    public CreateCommand(Path outputFile, long partSize, ChecksumAlgorithm hash, Path[] inputs) {
         this.outputFile = outputFile;
         this.partSize = partSize;
         this.hash = hash;
@@ -129,7 +131,7 @@ public class CreateCommand {
         }
         
         try (PartOutputStream out = new PartOutputStream(this.outputFile, this.partSize, this.hash)) {
-            try (GZIPOutputStream gzip = new GZIPOutputStream(out)) {
+            try (XZOutputStream gzip = new XZOutputStream(out, new LZMA2Options(9))) {
                 try (ZipOutputStream zip = new ZipOutputStream(gzip, StandardCharsets.UTF_8)) {
                     ZipCreator writer = new ZipCreator(zip, this.inputs, this.hash) {
                         @Override

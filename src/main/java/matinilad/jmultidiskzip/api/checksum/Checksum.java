@@ -24,26 +24,27 @@
  *
  * For more information, please refer to <https://unlicense.org>
  */
-package matinilad.jmultidiskzip.api;
+package matinilad.jmultidiskzip.api.checksum;
 
-import java.nio.file.Path;
-import matinilad.jmultidiskzip.api.checksum.ChecksumAlgorithm;
+import java.security.MessageDigest;
 
 /**
  *
  * @author Cien
  */
-public class MultiDiskCreator {
-    
-    public MultiDiskCreator(
-            Path[] inputs,
-            Path outputFile,
-            ChecksumAlgorithm inputHash,
-            ChecksumAlgorithm outputHash,
-            ArchiveFormat archiveFormat,
-            CompressionFormat compressionFormat, int level,
-            char[] password) {
-        
+public interface Checksum {
+
+    public static boolean equals(byte[] a, byte[] b) {
+        return MessageDigest.isEqual(a, b);
     }
     
+    public ChecksumAlgorithm getAlgorithm();
+    
+    public void update(byte data);
+
+    public void update(byte[] data, int offset, int length);
+
+    public byte[] digest();
+    
+    public void reset();
 }

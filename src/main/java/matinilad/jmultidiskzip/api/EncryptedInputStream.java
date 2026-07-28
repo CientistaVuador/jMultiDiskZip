@@ -74,9 +74,8 @@ public class EncryptedInputStream extends FilterInputStream {
     private long nonce = 0;
 
     private int nextBufferSize = -1;
-    
-    private final byte[] buffer = new byte[EncryptedOutputStream.BUFFER_SIZE];
-    private int bufferLength = 0;
+
+    private byte[] buffer = null;
     private int bufferIndex = 0;
 
     private boolean closed = false;
@@ -125,10 +124,10 @@ public class EncryptedInputStream extends FilterInputStream {
                 spec.clearPassword();
                 Arrays.fill(this.password, '\0');
             }
-            
+
             mac.init(signKey);
             mac.update(MAGIC.getBytes(StandardCharsets.UTF_8));
-            
+
             byte[] signedMagic = mac.doFinal();
             byte[] headerMagic = this.in.readNBytes(signedMagic.length);
             if (headerMagic.length != signedMagic.length) {
@@ -139,46 +138,39 @@ public class EncryptedInputStream extends FilterInputStream {
             }
 
             this.key = encryptionKey;
-            
+
             this.cipher = Cipher.getInstance("AES/GCM/NoPadding");
             this.cipher.init(Cipher.DECRYPT_MODE, this.key, nextIV());
-            
+
             this.cipher.updateAAD(salt);
             this.cipher.updateAAD(signedMagic);
         } catch (NoSuchAlgorithmException | InvalidKeySpecException | InvalidKeyException | NoSuchPaddingException | InvalidAlgorithmParameterException ex) {
             throw new IOException(ex);
         }
     }
-    
+
     private void readBuffer() throws IOException {
         try {
-            int encryptedSize = 2 + this.nextBufferSize + 16;
+            int encryptedSize = 4 + this.nextBufferSize + 16;
             byte[] encrypted = this.in.readNBytes(encryptedSize);
             if (encrypted.length != encryptedSize) {
-                throw new EOFException("invalid buffer size! expected "+encryptedSize);
+                throw new EOFException("invalid buffer size! expected " + encryptedSize);
             }
-            
+
             byte[] decrypted = this.cipher.doFinal(encrypted);
-            this.nextBufferSize = ((decrypted[0] & 0xFF) << 8) | ((decrypted[1] & 0xFF) << 0);
-            
-            this.bufferLength = decrypted.length - 2;
+            this.nextBufferSize
+                    = ((decrypted[0] & 0xFF) << 24)
+                    | ((decrypted[1] & 0xFF) << 16)
+                    | ((decrypted[2] & 0xFF) << 8)
+                    | ((decrypted[3] & 0xFF) << 0);
+
+            this.buffer = Arrays.copyOfRange(decrypted, 4, decrypted.length);
             this.bufferIndex = 0;
-            System.arraycopy(decrypted, 2, this.buffer, 0, this.bufferLength);
-            
+
             this.cipher.init(Cipher.DECRYPT_MODE, this.key, nextIV());
             this.cipher.updateAAD(encrypted, encrypted.length - 16, 16);
         } catch (InvalidKeyException | InvalidAlgorithmParameterException | IllegalBlockSizeException | BadPaddingException ex) {
             throw new IOException(ex);
-        }
-    }
-    
-    private void readBufferChecked() throws IOException {
-        if (this.nextBufferSize == -1) {
-            this.nextBufferSize = 0;
-            readBuffer();
-        }
-        if (this.nextBufferSize != 0) {
-            readBuffer();
         }
     }
 
@@ -192,16 +184,20 @@ public class EncryptedInputStream extends FilterInputStream {
             this.header = true;
         }
 
-        if (this.bufferIndex >= this.bufferLength) {
-            if (this.nextBufferSize == 0) {
-                return false;
-            }
-            readBufferChecked();
-            if (this.bufferLength == 0) {
-                return false;
-            }
+        if (this.buffer == null) {
+            this.nextBufferSize = 0;
+            readBuffer();
         }
 
+        if (this.bufferIndex >= this.buffer.length) {
+            do {
+                if (this.nextBufferSize <= -1) {
+                    return false;
+                }
+                readBuffer();
+            } while (this.buffer.length == 0);
+        }
+        
         return true;
     }
 
@@ -220,24 +216,67 @@ public class EncryptedInputStream extends FilterInputStream {
     @Override
     public int read(byte[] b, int off, int len) throws IOException {
         Objects.checkFromIndexSize(off, len, b.length);
+        if (len == 0) {
+            return 0;
+        }
         if (!readChecks()) {
             return -1;
         }
-
-        int toCopy = Math.min(this.bufferLength - this.bufferIndex, len);
+        
+        int toCopy = Math.min(this.buffer.length - this.bufferIndex, len);
         System.arraycopy(this.buffer, this.bufferIndex, b, off, toCopy);
         this.bufferIndex += toCopy;
-
+        
         return toCopy;
     }
 
+    @Override
+    public long skip(long n) throws IOException {
+        if (n <= 0) {
+            return 0;
+        }
+        byte[] buf = new byte[4096];
+        long count = 0;
+        int r;
+        while ((r = read(buf, 0, (int) Math.min(buf.length, n - count))) != -1) {
+            count += r;
+            if (count >= n) {
+                break;
+            }
+        }
+        return count;
+    }
+
+    @Override
+    public synchronized void mark(int readlimit) {
+
+    }
+
+    @Override
+    public synchronized void reset() throws IOException {
+        throw new IOException("mark/reset not supported");
+    }
+
+    @Override
+    public boolean markSupported() {
+        return false;
+    }
+
+    @Override
+    public int available() throws IOException {
+        if (this.buffer == null) {
+            return 0;
+        }
+        return this.buffer.length - this.bufferIndex;
+    }
+    
     @Override
     public void close() throws IOException {
         if (this.closed) {
             return;
         }
         this.closed = true;
-        this.in.close();
+        super.close();
     }
 
 }

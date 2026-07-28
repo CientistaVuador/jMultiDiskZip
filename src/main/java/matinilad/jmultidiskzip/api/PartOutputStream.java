@@ -32,9 +32,9 @@ import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.util.HexFormat;
+import matinilad.jmultidiskzip.api.checksum.Checksum;
+import matinilad.jmultidiskzip.api.checksum.ChecksumAlgorithm;
 
 /**
  *
@@ -47,15 +47,15 @@ public class PartOutputStream extends OutputStream {
     private final int leadingZeros;
     
     private final long partSize;
-    private final MessageDigest digest;
-    private final HashAlgorithm hashAlgorithm;
+    private final ChecksumAlgorithm hashAlgorithm;
+    private final Checksum digest;
     
     private OutputStream output = null;
     private long count = 0;
     private int partNumber = 0;
     private String partString = "";
     
-    public PartOutputStream(Path partOne, long partSize, HashAlgorithm hashAlgorithm) {
+    public PartOutputStream(Path partOne, long partSize, ChecksumAlgorithm hashAlgorithm) {
         Object[] pathData = PartInputStream.splitPathData(partOne);
         
         this.directory = (Path) pathData[0];
@@ -75,17 +75,16 @@ public class PartOutputStream extends OutputStream {
         this.hashAlgorithm = hashAlgorithm;
 
         if (this.hashAlgorithm != null) {
-            try {
-                this.digest = MessageDigest.getInstance(this.hashAlgorithm.getAlgorithm());
-            } catch (NoSuchAlgorithmException ex) {
-                throw new IllegalArgumentException(ex);
-            }
+            this.digest = hashAlgorithm.newChecksum();
         } else {
             this.digest = null;
         }
     }
 
     private Path createFile(String suffix) {
+        if (this.directory == null) {
+            return Path.of(this.name + suffix);
+        }
         return this.directory.resolve(this.name + suffix);
     }
 
@@ -96,7 +95,7 @@ public class PartOutputStream extends OutputStream {
             this.count = 0;
 
             if (this.digest != null) {
-                Path checksumFile = createFile(this.partString+"."+this.hashAlgorithm.getExtension());
+                Path checksumFile = createFile(this.partString+"."+this.hashAlgorithm.getExtension(0));
                 Files.writeString(checksumFile, HexFormat.of().formatHex(this.digest.digest()), StandardCharsets.UTF_8);
             }
         }

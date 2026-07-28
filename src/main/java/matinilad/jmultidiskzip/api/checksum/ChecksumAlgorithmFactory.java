@@ -24,57 +24,21 @@
  *
  * For more information, please refer to <https://unlicense.org>
  */
-package matinilad.jmultidiskzip.api;
+package matinilad.jmultidiskzip.api.checksum;
 
 /**
  *
  * @author Cien
  */
-public enum HashAlgorithm {
-    SHA256("SHA256 [32 Bytes] (Recommended, Secure)", "SHA-256", "sha256"),
-    SHA1("SHA1 [20 Bytes] (Insecure)", "SHA-1", "sha1"),
-    MD5("MD5 [16 Bytes] (Fast, Insecure)", "MD5", "md5")
-    ;
+public interface ChecksumAlgorithmFactory {
     
-    public static HashAlgorithm fromExtension(String extension) {
-        for (HashAlgorithm a:values()) {
-            if (a.getExtension().equalsIgnoreCase(extension)) {
-                return a;
-            }
-        }
-        return null;
+    public static ChecksumAlgorithmFactory getDefault() {
+        return DefaultChecksumAlgorithmFactory.getDefault();
     }
     
-    public static HashAlgorithm fromAlgorithm(String algorithm) {
-        for (HashAlgorithm a:values()) {
-            if (a.getAlgorithm().equalsIgnoreCase(algorithm)) {
-                return a;
-            }
-        }
-        return null;
-    }
+    public ChecksumAlgorithm[] getAlgorithms();
     
-    private final String displayName;
-    private final String algorithm;
-    private final String extension;
+    public ChecksumAlgorithm fromName(String name);
     
-    private HashAlgorithm(String displayName, String algorithm, String extension) {
-        this.displayName = displayName;
-        this.algorithm = algorithm;
-        this.extension = extension;
-    }
-
-    public String getDisplayName() {
-        return displayName;
-    }
-
-    public String getAlgorithm() {
-        return algorithm;
-    }
-
-    public String getExtension() {
-        return extension;
-    }
-    
-    
+    public ChecksumAlgorithm fromExtension(String extension);
 }

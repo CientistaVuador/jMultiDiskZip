@@ -38,15 +38,24 @@ import java.util.Objects;
 import java.util.regex.Pattern;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
+import matinilad.jmultidiskzip.api.checksum.Checksum;
+import matinilad.jmultidiskzip.api.checksum.ChecksumAlgorithm;
+import matinilad.jmultidiskzip.api.checksum.ChecksumAlgorithmFactory;
 
 /**
  *
  * @author Cien
  */
 public class ZipChecksumTester {
+
+    private final ChecksumAlgorithmFactory checksumFactory;
+    
+    public ZipChecksumTester(ChecksumAlgorithmFactory checksumFactory) {
+        this.checksumFactory = checksumFactory;
+    }
     
     public ZipChecksumTester() {
-        
+        this(ChecksumAlgorithmFactory.getDefault());
     }
 
     protected boolean onShouldInterrupt() {
@@ -94,8 +103,8 @@ public class ZipChecksumTester {
             entryPath = Path.of(entryPathString.substring(0, entryPathString.length() - (lastExtension.length() + 1)));
             
             onFile(entryPath);
-
-            HashAlgorithm hashAlgorithm = HashAlgorithm.fromExtension(lastExtension);
+            
+            ChecksumAlgorithm hashAlgorithm = this.checksumFactory.fromExtension(lastExtension);
             if (hashAlgorithm == null) {
                 onFileError(entryPath, new IOException("unknown hash extension"));
                 continue;
@@ -110,14 +119,8 @@ public class ZipChecksumTester {
                 continue;
             }
 
-            MessageDigest digest;
-            try {
-                digest = MessageDigest.getInstance(hashAlgorithm.getAlgorithm());
-            } catch (NoSuchAlgorithmException ex) {
-                onFileError(entryPath, new IOException(ex));
-                continue;
-            }
-
+            Checksum digest = hashAlgorithm.newChecksum();
+            
             if (!Files.exists(entryPath)) {
                 onFileError(entryPath, new IOException("file does not exists"));
                 continue;

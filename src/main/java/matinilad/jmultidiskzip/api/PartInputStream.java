@@ -33,10 +33,12 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.util.HexFormat;
 import java.util.Objects;
 import java.util.regex.Pattern;
+import matinilad.jmultidiskzip.api.checksum.Checksum;
+import matinilad.jmultidiskzip.api.checksum.ChecksumAlgorithm;
+import matinilad.jmultidiskzip.api.checksum.ChecksumAlgorithmFactory;
 
 /**
  *
@@ -46,7 +48,7 @@ public class PartInputStream extends InputStream {
 
     protected static Object[] splitPathData(Path part) {
         Objects.requireNonNull(part, "part path is null");
-
+        
         Path fileName = part.getFileName();
         if (fileName == null) {
             throw new IllegalArgumentException("part path has no name");
@@ -63,7 +65,7 @@ public class PartInputStream extends InputStream {
         if (leadingZeros != 0) {
             leadingZeros = extension.length();
         }
-        
+
         return new Object[]{
             part.getParent(),
             fileNameString.substring(0, fileNameString.length() - (extension.length() + 1)),
@@ -71,6 +73,8 @@ public class PartInputStream extends InputStream {
             partNumber
         };
     }
+
+    private final ChecksumAlgorithmFactory checksumFactory;
 
     private final Object lock = new Object();
     private volatile boolean waitingForSignal = false;
@@ -85,11 +89,11 @@ public class PartInputStream extends InputStream {
     private InputStream partStream = null;
 
     private byte[] partHash = null;
-    private MessageDigest partDigest = null;
+    private Checksum partDigest = null;
 
     private boolean closed = false;
 
-    public PartInputStream(Path partOne) {
+    public PartInputStream(Path partOne, ChecksumAlgorithmFactory checksumFactory) {
         Object[] pathData = splitPathData(partOne);
 
         this.directory = (Path) pathData[0];
@@ -100,6 +104,12 @@ public class PartInputStream extends InputStream {
         if (number != 1) {
             throw new IllegalArgumentException("Part number must be 1! Found: " + number);
         }
+
+        this.checksumFactory = checksumFactory;
+    }
+
+    public PartInputStream(Path partOne) {
+        this(partOne, ChecksumAlgorithmFactory.getDefault());
     }
 
     public void continueSignal(Path newDirectory, boolean closeStream) {
@@ -131,7 +141,7 @@ public class PartInputStream extends InputStream {
             byte[] resultHash = this.partDigest.digest();
             if (!MessageDigest.isEqual(resultHash, this.partHash)) {
                 HexFormat hex = HexFormat.of();
-                throw new IOException("checksum failed for part "+this.partNumber+", expected "+hex.formatHex(this.partHash)+" found "+hex.formatHex(resultHash));
+                throw new IOException("checksum failed for part " + this.partNumber + ", expected " + hex.formatHex(this.partHash) + " found " + hex.formatHex(resultHash));
             }
         }
 
@@ -179,22 +189,20 @@ public class PartInputStream extends InputStream {
         }
         this.partStream = new BufferedInputStream(Files.newInputStream(partFile));
 
-        for (HashAlgorithm hash : HashAlgorithm.values()) {
-            Path hashFile = this.directory.resolve(this.name + partString + "." + hash.getExtension());
-            if (Files.isRegularFile(hashFile)) {
-                if (Files.size(hashFile) > 1024) {
-                    continue;
-                }
-                try {
-                    this.partHash = HexFormat.of().parseHex(Files.readString(hashFile, StandardCharsets.UTF_8).trim());
-                    try {
-                        this.partDigest = MessageDigest.getInstance(hash.getAlgorithm());
-                    } catch (NoSuchAlgorithmException ex) {
-                        throw new IOException(ex);
+        for (ChecksumAlgorithm hash : this.checksumFactory.getAlgorithms()) {
+            for (int i = 0; i < hash.getNumberOfExtensions(); i++) {
+                Path hashFile = this.directory.resolve(this.name + partString + "." + hash.getExtension(i));
+                if (Files.isRegularFile(hashFile)) {
+                    if (Files.size(hashFile) > 1024) {
+                        continue;
                     }
-                    break;
-                } catch (IllegalArgumentException ex) {
-                    //todo?
+                    try {
+                        this.partHash = HexFormat.of().parseHex(Files.readString(hashFile, StandardCharsets.UTF_8).trim());
+                        this.partDigest = hash.newChecksum();
+                        break;
+                    } catch (IllegalArgumentException ex) {
+                        //todo?
+                    }
                 }
             }
         }
@@ -232,7 +240,7 @@ public class PartInputStream extends InputStream {
         if (this.closed) {
             return -1;
         }
-        
+
         int r = -1;
         if (this.partStream != null) {
             r = this.partStream.read(b, off, len);
@@ -245,7 +253,7 @@ public class PartInputStream extends InputStream {
                 }
             } while ((r = this.partStream.read(b, off, len)) == -1);
         }
-        
+
         len = Math.min(len, r);
 
         if (this.partDigest != null) {

@@ -42,6 +42,8 @@ import java.util.Objects;
 import java.util.zip.CRC32;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
+import matinilad.jmultidiskzip.api.checksum.Checksum;
+import matinilad.jmultidiskzip.api.checksum.ChecksumAlgorithm;
 
 /**
  *
@@ -53,14 +55,14 @@ public class ZipCreator {
 
     private final ZipOutputStream output;
     private final ArchivePathStream pathStream;
-    private final HashAlgorithm hash;
-
-    private MessageDigest digest = null;
+    private final ChecksumAlgorithm hash;
+    
+    private Checksum digest = null;
     private CRC32 crc = null;
     private ByteArrayOutputStream checksumsStream = null;
     private ZipOutputStream checksumsZip = null;
 
-    public ZipCreator(ZipOutputStream output, Path[] inputs, HashAlgorithm hash) {
+    public ZipCreator(ZipOutputStream output, Path[] inputs, ChecksumAlgorithm hash) {
         this.output = Objects.requireNonNull(output, "output is null");
         this.pathStream = new ArchivePathStream(inputs);
         this.hash = hash;
@@ -84,11 +86,7 @@ public class ZipCreator {
 
     private void init() throws IOException {
         if (this.hash != null) {
-            try {
-                this.digest = MessageDigest.getInstance(this.hash.getAlgorithm());
-            } catch (NoSuchAlgorithmException ex) {
-                throw new IOException(ex);
-            }
+            this.digest = this.hash.newChecksum();
         } else {
             this.digest = null;
         }
@@ -239,9 +237,9 @@ public class ZipCreator {
                 this.crc.reset();
                 this.crc.update(hashHexBytes, 0, hashHexBytes.length);
                 long crcValue = this.crc.getValue();
-
-                ZipEntry hashEntry = new ZipEntry(entryName + "." + this.hash.getExtension());
-
+                
+                ZipEntry hashEntry = new ZipEntry(entryName + "." + this.hash.getExtension(0));
+                
                 hashEntry.setMethod(ZipEntry.STORED);
 
                 hashEntry.setCompressedSize(hashHexBytes.length);

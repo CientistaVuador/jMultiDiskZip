@@ -24,26 +24,53 @@
  *
  * For more information, please refer to <https://unlicense.org>
  */
-package matinilad.jmultidiskzip.api;
+package matinilad.jmultidiskzip.api.checksum;
 
-import java.nio.file.Path;
-import matinilad.jmultidiskzip.api.checksum.ChecksumAlgorithm;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.util.Objects;
 
 /**
  *
  * @author Cien
  */
-public class MultiDiskCreator {
+public class DefaultChecksum implements Checksum {
+
+    private final DefaultChecksumAlgorithm algorithm;
+    private final MessageDigest digest;
+
+    public DefaultChecksum(DefaultChecksumAlgorithm algorithm) throws NoSuchAlgorithmException {
+        this.algorithm = Objects.requireNonNull(algorithm, "algorithm is null");
+        this.digest = MessageDigest.getInstance(algorithm.getName());
+    }
     
-    public MultiDiskCreator(
-            Path[] inputs,
-            Path outputFile,
-            ChecksumAlgorithm inputHash,
-            ChecksumAlgorithm outputHash,
-            ArchiveFormat archiveFormat,
-            CompressionFormat compressionFormat, int level,
-            char[] password) {
-        
+    @Override
+    public DefaultChecksumAlgorithm getAlgorithm() {
+        return this.algorithm;
+    }
+    
+    public MessageDigest getDigest() {
+        return this.digest;
+    }
+
+    @Override
+    public void update(byte data) {
+        this.digest.update(data);
+    }
+
+    @Override
+    public void update(byte[] data, int offset, int length) {
+        this.digest.update(data, offset, length);
+    }
+
+    @Override
+    public byte[] digest() {
+        return this.digest.digest();
+    }
+
+    @Override
+    public void reset() {
+        this.digest.reset();
     }
     
 }

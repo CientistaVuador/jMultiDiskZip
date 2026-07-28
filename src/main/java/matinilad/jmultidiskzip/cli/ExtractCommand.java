@@ -35,6 +35,7 @@ import java.util.zip.ZipInputStream;
 import matinilad.jmultidiskzip.api.PartInputStream;
 import matinilad.jmultidiskzip.api.ZipChecksumTester;
 import matinilad.jmultidiskzip.api.ZipExtractor;
+import org.tukaani.xz.XZInputStream;
 
 /**
  *
@@ -111,7 +112,7 @@ public class ExtractCommand {
                 continueSignal(Path.of(input), false);
             }
         }) {
-            try (GZIPInputStream gzip = new GZIPInputStream(in)) {
+            try (XZInputStream gzip = new XZInputStream(in)) {
                 try (ZipInputStream zip = new ZipInputStream(gzip, StandardCharsets.UTF_8)) {
                     ZipExtractor extractor = new ZipExtractor(zip, this.output) {
                         @Override

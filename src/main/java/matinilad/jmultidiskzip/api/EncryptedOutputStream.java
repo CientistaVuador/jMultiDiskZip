@@ -32,6 +32,7 @@ import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.security.InvalidAlgorithmParameterException;
 import java.security.InvalidKeyException;
+import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
 import java.security.spec.InvalidKeySpecException;
@@ -55,8 +56,8 @@ import javax.crypto.spec.SecretKeySpec;
 public class EncryptedOutputStream extends FilterOutputStream {
 
     public static final String MAGIC = "EncryptedStream1";
-    public static final int BUFFER_SIZE = 65535;
 
+    private final byte[] userSalt;
     private final char[] password;
 
     private boolean header = false;
@@ -65,17 +66,40 @@ public class EncryptedOutputStream extends FilterOutputStream {
     private Cipher cipher = null;
     private long nonce = 0;
     
-    private byte[] lastBuffer = new byte[BUFFER_SIZE];
-    private int lastBufferIndex = 0;
+    private byte[] lastBuffer;
+    private int lastBufferIndex;
     
-    private byte[] currentBuffer = new byte[BUFFER_SIZE];
-    private int currentBufferIndex = 0;
+    private byte[] currentBuffer;
+    private int currentBufferIndex;
     
     private boolean closed = false;
 
-    public EncryptedOutputStream(OutputStream out, char[] password) {
+    public EncryptedOutputStream(OutputStream out, int bufferSize, byte[] userSalt, char[] password) {
         super(Objects.requireNonNull(out, "out is null"));
+        if (bufferSize < 1) {
+            throw new IllegalArgumentException("bufferSize < 1");
+        }
+        
+        if (userSalt == null) {
+            this.userSalt = null;
+        } else {
+            this.userSalt = userSalt.clone();
+        }
         this.password = password.clone();
+        
+        this.lastBuffer = new byte[bufferSize];
+        this.lastBufferIndex = 0;
+        
+        this.currentBuffer = new byte[bufferSize];
+        this.currentBufferIndex = 0;
+    }
+    
+    public EncryptedOutputStream(OutputStream out, byte[] userSalt, char[] password) {
+        this(out, 64 * 1024 * 1024, userSalt, password);
+    }
+    
+    public EncryptedOutputStream(OutputStream out, char[] password) {
+        this(out, null, password);
     }
 
     private GCMParameterSpec nextIV() {
@@ -87,13 +111,30 @@ public class EncryptedOutputStream extends FilterOutputStream {
         
         return new GCMParameterSpec(128, iv);
     }
+    
+    private byte[] generateSalt() throws IOException {
+        try {
+            MessageDigest sha256 = MessageDigest.getInstance("SHA-256");
+            
+            byte[] salt = new byte[32];
+            new SecureRandom().nextBytes(salt);
+            sha256.update(salt);
+            
+            if (this.userSalt != null) {
+                sha256.update(this.userSalt);
+            }
+            
+            return sha256.digest();
+        } catch (NoSuchAlgorithmException ex) {
+            throw new IOException(ex);
+        }
+    }
 
     private void writeHeader() throws IOException {
         try {
-            byte[] salt = new byte[32];
-            new SecureRandom().nextBytes(salt);
+            byte[] salt = generateSalt();
             this.out.write(salt);
-
+            
             Mac mac = Mac.getInstance("HmacSHA256");
 
             SecretKey signKey;
@@ -138,6 +179,8 @@ public class EncryptedOutputStream extends FilterOutputStream {
     private void pushBuffer() throws IOException {
         try {
             byte[] shouldBeEmpty = this.cipher.update(new byte[] {
+                (byte) (this.currentBufferIndex >>> 24),
+                (byte) (this.currentBufferIndex >>> 16),
                 (byte) (this.currentBufferIndex >>> 8),
                 (byte) (this.currentBufferIndex >>> 0)
             });
@@ -209,11 +252,29 @@ public class EncryptedOutputStream extends FilterOutputStream {
     }
 
     @Override
+    public void flush() throws IOException {
+        if (this.closed) {
+            return;
+        }
+        
+        writeChecks();
+        
+        if (this.currentBufferIndex != 0) {
+            pushBuffer();
+        }
+        if (this.lastBufferIndex != 0) {
+            pushBuffer();
+        }
+        
+        super.flush();
+    }
+    
+    @Override
     public void close() throws IOException {
         if (this.closed) {
             return;
         }
-
+        
         if (!this.header) {
             writeHeader();
             this.header = true;
@@ -221,6 +282,7 @@ public class EncryptedOutputStream extends FilterOutputStream {
         if (this.currentBufferIndex != 0) {
             pushBuffer();
         }
+        this.currentBufferIndex = -1;
         pushBuffer();
         
         this.closed = true;
