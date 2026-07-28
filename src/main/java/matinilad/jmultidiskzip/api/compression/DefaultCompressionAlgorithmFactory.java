@@ -24,9 +24,8 @@
  *
  * For more information, please refer to <https://unlicense.org>
  */
-package matinilad.jmultidiskzip.api.checksum;
+package matinilad.jmultidiskzip.api.compression;
 
-import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -34,61 +33,50 @@ import java.util.List;
  *
  * @author Cien
  */
-public class DefaultChecksumAlgorithmFactory implements ChecksumAlgorithmFactory {
-
-    private static final DefaultChecksumAlgorithmFactory defaultInstance = new DefaultChecksumAlgorithmFactory();
-
+public class DefaultCompressionAlgorithmFactory implements CompressionAlgorithmFactory {
+    
+    private static final DefaultCompressionAlgorithmFactory defaultInstance = new DefaultCompressionAlgorithmFactory();
+    
     static {
-        try {
-            ChecksumAlgorithm[] defaults = {
-                new DefaultChecksumAlgorithm("SHA-256 (Secure) - 32 Bytes", "SHA-256", new String[]{"sha256"}),
-                new DefaultChecksumAlgorithm("SHA1 (Insecure) - 20 Bytes", "SHA-1", new String[] {"sha1"}),
-                new DefaultChecksumAlgorithm("MD5 (Fast, Insecure) - 16 Bytes", "MD5", new String[] {"md5"}),
-                new CRC32ChecksumAlgorithm()
-            };
-            for (ChecksumAlgorithm d : defaults) {
-                defaultInstance.addChecksumAlgorithm(d);
-            }
-        } catch (NoSuchAlgorithmException ex) {
-            throw new RuntimeException(ex);
-        }
+        defaultInstance.addCompressionAlgorithm(new GZIPCompressionAlgorithm());
+        defaultInstance.addCompressionAlgorithm(new XZCompressionAlgorithm());
     }
-
-    public static DefaultChecksumAlgorithmFactory getDefault() {
+    
+    public static DefaultCompressionAlgorithmFactory getDefault() {
         return defaultInstance;
     }
-
-    private final List<ChecksumAlgorithm> algorithms = new ArrayList<>();
-
-    public DefaultChecksumAlgorithmFactory() {
-
+    
+    private final List<CompressionAlgorithm> algorithms = new ArrayList<>();
+    
+    public DefaultCompressionAlgorithmFactory() {
+        
     }
-
-    public boolean addChecksumAlgorithm(ChecksumAlgorithm algorithm) {
+    
+    public boolean addCompressionAlgorithm(CompressionAlgorithm algorithm) {
         if (algorithm == null || this.algorithms.contains(algorithm)) {
             return false;
         }
         return this.algorithms.add(algorithm);
     }
 
-    public boolean removeChecksumAlgorithm(ChecksumAlgorithm algorithm) {
+    public boolean removeCompressionAlgorithm(CompressionAlgorithm algorithm) {
         if (algorithm == null) {
             return false;
         }
         return this.algorithms.remove(algorithm);
     }
-
+    
     @Override
-    public ChecksumAlgorithm[] getAlgorithms() {
-        return this.algorithms.toArray(ChecksumAlgorithm[]::new);
+    public CompressionAlgorithm[] getAlgorithms() {
+        return this.algorithms.toArray(CompressionAlgorithm[]::new);
     }
 
     @Override
-    public ChecksumAlgorithm fromName(String name) {
+    public CompressionAlgorithm fromName(String name) {
         if (name == null) {
             return null;
         }
-        for (ChecksumAlgorithm a : this.algorithms) {
+        for (CompressionAlgorithm a : this.algorithms) {
             if (a.getName().equalsIgnoreCase(name)) {
                 return a;
             }
@@ -97,11 +85,11 @@ public class DefaultChecksumAlgorithmFactory implements ChecksumAlgorithmFactory
     }
 
     @Override
-    public ChecksumAlgorithm fromExtension(String extension) {
+    public CompressionAlgorithm fromExtension(String extension) {
         if (extension == null) {
             return null;
         }
-        for (ChecksumAlgorithm a : this.algorithms) {
+        for (CompressionAlgorithm a : this.algorithms) {
             for (int i = 0; i < a.getNumberOfExtensions(); i++) {
                 if (a.getExtension(i).equalsIgnoreCase(extension)) {
                     return a;
@@ -111,4 +99,20 @@ public class DefaultChecksumAlgorithmFactory implements ChecksumAlgorithmFactory
         return null;
     }
 
+    @Override
+    public CompressionAlgorithm fromMagicNumber(String magicNumber) {
+        if (magicNumber == null) {
+            return null;
+        }
+        magicNumber = magicNumber.toLowerCase();
+        for (CompressionAlgorithm a:this.algorithms) {
+            for (int i = 0; i < a.getNumberOfMagicNumbers(); i++) {
+                if (magicNumber.startsWith(a.getMagicNumber(i).toLowerCase())) {
+                    return a;
+                }
+            }
+        }
+        return null;
+    }
+    
 }

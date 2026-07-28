@@ -26,6 +26,7 @@
  */
 package matinilad.jmultidiskzip.cli;
 
+import java.io.PrintStream;
 import java.util.Arrays;
 
 /**
@@ -34,29 +35,29 @@ import java.util.Arrays;
  */
 public class CLInterface {
     
-    private static void printHelp() {
-        System.out.println("Available Commands:");
-        System.out.println("-create (Creates a ZIP file with multiple volumes)");
-        System.out.println("-extract (Extracts a ZIP file with multiple volumes)");
+    private static void printHelp(PrintStream out) {
+        out.println("Available Commands:");
+        out.println("-create (Creates a ZIP file with multiple volumes)");
+        out.println("-extract (Extracts a ZIP file with multiple volumes)");
     }
     
-    public static void run(String[] args) throws Exception {
+    public static void run(PrintStream out, String[] args) throws Exception {
         if (args.length == 0) {
-            printHelp();
+            printHelp(out);
             return;
         }
         switch (args[0]) {
             case "-create" -> {
-                CreateCommand.run(Arrays.copyOfRange(args, 1, args.length));
+                CreateCommand.run(out, Arrays.copyOfRange(args, 1, args.length));
             }
             case "-extract" -> {
-                ExtractCommand.run(Arrays.copyOfRange(args, 1, args.length));
+                ExtractCommand.run(out, Arrays.copyOfRange(args, 1, args.length));
             }
             default -> {
                 if (!args[0].equals("-help")) {
-                    System.out.println("Unknown Command: "+args[0]);
+                    out.println("Unknown Command: "+args[0]);
                 }
-                printHelp();
+                printHelp(out);
             }
         }
     }

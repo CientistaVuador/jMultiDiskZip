@@ -24,47 +24,48 @@
  *
  * For more information, please refer to <https://unlicense.org>
  */
-package matinilad.jmultidiskzip.api;
+package matinilad.jmultidiskzip.api.compression;
+
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.util.Objects;
+import org.tukaani.xz.LZMA2Options;
+import org.tukaani.xz.XZ;
+import org.tukaani.xz.XZInputStream;
+import org.tukaani.xz.XZOutputStream;
 
 /**
  *
  * @author Cien
  */
-public enum CompressionFormat {
-    GZIP("gz", new String[] {"1f8b"}, 0, 10),
-    XZ("xz", new String[] {"fd377a585a00"}, 0, 10)
-    ;
+public class XZCompressionAlgorithm extends DefaultCompressionAlgorithm {
+
+    public XZCompressionAlgorithm() {
+        super("XZ", "xz", new String[] {"xz"}, LZMA2Options.PRESET_MIN, LZMA2Options.PRESET_MAX + 1, LZMA2Options.PRESET_DEFAULT, new String[] {"FD377A585A00"});
+    }
     
-    private final String extension;
-    private final String[] magicNumbers;
-    private final int minLevel;
-    private final int maxLevel;
+    public XZOutputStream compress(OutputStream out, LZMA2Options options) throws IOException {
+        Objects.requireNonNull(out, "out is null");
+        Objects.requireNonNull(options, "options is null");
+        
+        return new XZOutputStream(out, options, XZ.CHECK_CRC32);
+    }
     
-    private CompressionFormat(String extension, String[] magicNumbers, int minLevel, int maxLevel) {
-        this.extension = extension;
-        this.magicNumbers = magicNumbers;
-        this.minLevel = minLevel;
-        this.maxLevel = maxLevel;
+    @Override
+    public XZOutputStream compress(OutputStream out, int level) throws IOException {
+        checkLevel(level);
+        return compress(out, new LZMA2Options(level));
     }
 
-    public String getExtension() {
-        return extension;
-    }
-    
-    public int getNumberOfMagicNumbers() {
-        return this.magicNumbers.length;
-    }
-    
-    public String getMagicNumber(int index) {
-        return this.magicNumbers[index];
+    @Override
+    public XZOutputStream compress(OutputStream out) throws IOException {
+        return compress(out, getDefaultCompressionLevel());
     }
 
-    public int getMinLevel() {
-        return minLevel;
-    }
-
-    public int getMaxLevel() {
-        return maxLevel;
+    @Override
+    public XZInputStream decompress(InputStream in) throws IOException {
+        return new XZInputStream(in);
     }
     
 }

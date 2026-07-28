@@ -24,7 +24,7 @@
  *
  * For more information, please refer to <https://unlicense.org>
  */
-package matinilad.jmultidiskzip.api;
+package matinilad.jmultidiskzip.api.utils;
 
 import java.io.EOFException;
 import java.io.FilterInputStream;
@@ -48,7 +48,7 @@ import javax.crypto.SecretKeyFactory;
 import javax.crypto.spec.GCMParameterSpec;
 import javax.crypto.spec.PBEKeySpec;
 import javax.crypto.spec.SecretKeySpec;
-import static matinilad.jmultidiskzip.api.EncryptedOutputStream.MAGIC;
+import static matinilad.jmultidiskzip.api.utils.EncryptedOutputStream.MAGIC;
 
 /**
  *

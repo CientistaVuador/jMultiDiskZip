@@ -26,6 +26,7 @@
  */
 package matinilad.jmultidiskzip;
 
+import java.io.PrintStream;
 import java.util.Arrays;
 import matinilad.jmultidiskzip.cli.CLInterface;
 
@@ -35,25 +36,27 @@ import matinilad.jmultidiskzip.cli.CLInterface;
  */
 public class Main {
     
-    private static void printHelp() {
-        System.out.println("Available Interfaces:");
-        System.out.println("-cli (Create and Extract)");
+    private static void printHelp(PrintStream out) {
+        out.println("Available Interfaces:");
+        out.println("-cli (Create and Extract)");
     }
     
     public static void main(String[] args) throws Exception {
+        PrintStream out = System.out;
+        
         if (args.length == 0) {
-            printHelp();
+            printHelp(out);
             return;
         }
         switch (args[0]) {
             case "-cli" -> {
-                CLInterface.run(Arrays.copyOfRange(args, 1, args.length));
+                CLInterface.run(out, Arrays.copyOfRange(args, 1, args.length));
             }
             default -> {
                 if (!args[0].equals("-help")) {
-                    System.out.println("Unknown Interface: "+args[0]);
+                    out.println("Unknown Interface: "+args[0]);
                 }
-                printHelp();
+                printHelp(out);
             }
         }
     }

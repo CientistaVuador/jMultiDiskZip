@@ -35,8 +35,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.nio.file.attribute.FileTime;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.util.HexFormat;
 import java.util.Objects;
 import java.util.zip.CRC32;
@@ -52,6 +50,27 @@ import matinilad.jmultidiskzip.api.checksum.ChecksumAlgorithm;
 public class ZipCreator {
 
     public static final String CHECKSUMS_ZIP_FILENAME = "jMultiDiskZip_checksums.zip";
+    
+    public static final String EXTENSION = "zip";
+    private static final String[] MAGIC_NUMBERS = {"504B0304", "504B0506", "504B0708"};
+    
+    public static int getNumberOfMagicNumbers() {
+        return MAGIC_NUMBERS.length;
+    }
+    
+    public static String getMagicNumber(int index) {
+        return MAGIC_NUMBERS[index];
+    }
+    
+    public static boolean startsWithMagicNumber(String hex) {
+        hex = hex.toLowerCase();
+        for (int i = 0; i < getNumberOfMagicNumbers(); i++) {
+            if (hex.startsWith(getMagicNumber(i))) {
+                return true;
+            }
+        }
+        return false;
+    }
 
     private final ZipOutputStream output;
     private final ArchivePathStream pathStream;

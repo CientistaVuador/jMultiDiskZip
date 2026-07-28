@@ -24,12 +24,41 @@
  *
  * For more information, please refer to <https://unlicense.org>
  */
-package matinilad.jmultidiskzip.api;
+package matinilad.jmultidiskzip.api.compression;
+
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
 
 /**
  *
  * @author Cien
  */
-public class MultiDiskExtractor {
+public interface CompressionAlgorithm {
+
+    public String getDisplayName();
+
+    public String getName();
+
+    public int getNumberOfExtensions();
+
+    public String getExtension(int index);
+
+    public int getMinCompressionLevel();
+
+    public int getMaxCompressionLevel();
+
+    public int getDefaultCompressionLevel();
     
+    public int getNumberOfMagicNumbers();
+    
+    public String getMagicNumber(int index);
+    
+    public OutputStream compress(OutputStream out, int level) throws IOException;
+    
+    public default OutputStream compress(OutputStream out) throws IOException {
+        return compress(out, getDefaultCompressionLevel());
+    }
+    
+    public InputStream decompress(InputStream in) throws IOException;
 }

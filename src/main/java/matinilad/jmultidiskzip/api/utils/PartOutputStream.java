@@ -24,7 +24,7 @@
  *
  * For more information, please refer to <https://unlicense.org>
  */
-package matinilad.jmultidiskzip.api;
+package matinilad.jmultidiskzip.api.utils;
 
 import java.io.BufferedOutputStream;
 import java.io.IOException;
@@ -82,9 +82,6 @@ public class PartOutputStream extends OutputStream {
     }
 
     private Path createFile(String suffix) {
-        if (this.directory == null) {
-            return Path.of(this.name + suffix);
-        }
         return this.directory.resolve(this.name + suffix);
     }
 

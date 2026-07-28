@@ -27,12 +27,12 @@
 package matinilad.jmultidiskzip.cli;
 
 import java.io.IOException;
+import java.io.PrintStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.Scanner;
-import java.util.zip.GZIPInputStream;
 import java.util.zip.ZipInputStream;
-import matinilad.jmultidiskzip.api.PartInputStream;
+import matinilad.jmultidiskzip.api.utils.PartInputStream;
 import matinilad.jmultidiskzip.api.ZipChecksumTester;
 import matinilad.jmultidiskzip.api.ZipExtractor;
 import org.tukaani.xz.XZInputStream;
@@ -50,7 +50,7 @@ public class ExtractCommand {
         System.out.println("-verify=true/false (Verify files after extraction) [Not required, Default is true]");
     }
 
-    public static void run(String[] args) throws Exception {
+    public static void run(PrintStream out, String[] args) throws Exception {
         if (args.length == 0) {
             printHelp();
             return;

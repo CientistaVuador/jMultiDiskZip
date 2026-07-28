@@ -26,129 +26,324 @@
  */
 package matinilad.jmultidiskzip.cli;
 
+import java.io.BufferedOutputStream;
 import java.io.IOException;
+import java.io.OutputStream;
+import java.io.PrintStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.zip.ZipOutputStream;
-import matinilad.jmultidiskzip.api.PartOutputStream;
+import matinilad.jmultidiskzip.api.utils.PartOutputStream;
 import matinilad.jmultidiskzip.api.ZipCreator;
 import matinilad.jmultidiskzip.api.checksum.ChecksumAlgorithm;
 import matinilad.jmultidiskzip.api.checksum.ChecksumAlgorithmFactory;
-import org.tukaani.xz.LZMA2Options;
-import org.tukaani.xz.XZOutputStream;
+import matinilad.jmultidiskzip.api.compression.CompressionAlgorithm;
+import matinilad.jmultidiskzip.api.compression.CompressionAlgorithmFactory;
 
 /**
  *
  * @author Cien
  */
 public class CreateCommand {
-    
-    private static void printHelp() {
-        System.out.println("Arguments (Can be used in any order):");
-        System.out.println("-out=outputFile (Output file, must end with .001) [Required]");
-        System.out.println("-partSize=sizeInBytes (Part size, in bytes) [Required]");
-        System.out.println("-hash=SHA-256/SHA-1/MD5/CRC32/NONE (Hash algorithm) [Default is SHA-256]");
-        System.out.println("-in=inputFile (Adds a input file) [Not Required]");
-        System.out.println("-inDir=inputDirectory (Adds the contents of a directory as input) [Not Required]");
-    }
-    
-    public static void run(String[] args) throws Exception {
-        if (args.length == 0) {
-            printHelp();
-            return;
-        }
-        if (args.length == 1 && args[0].equals("-help")) {
-            printHelp();
-            return;
-        }
-        CLIArguments arguments = new CLIArguments();
-        arguments.load(args);
-        
-        String outputString = arguments.getFirst("-out");
-        if (outputString == null) {
-            System.out.println("A output is required");
-            printHelp();
-            return;
-        }
-        Path output = Path.of(outputString);
-        
-        String partSizeString = arguments.getFirst("-partSize");
-        if (partSizeString == null) {
-            System.out.println("Part size is required");
-            printHelp();
-            return;
-        }
-        long partSize = Long.parseLong(partSizeString);
-        
-        String hashString = arguments.getFirst("-hash");
-        String[] inputsString = arguments.get("-in");
-        String[] inputDirectoriesString = arguments.get("-inDir");
-        
-        ChecksumAlgorithm hash = ChecksumAlgorithmFactory.getDefault().fromName("SHA-256");
-        if (hashString != null) {
-            if (hashString.toLowerCase().equals("none")) {
-                hash = null;
-            } else {
-                hash = ChecksumAlgorithmFactory.getDefault().fromName(hashString);
+
+    private static final String[] units = {
+        "KB", "MB", "GB",
+        "KiB", "MiB", "GiB"
+    };
+    private static final long[] unitsSize = {
+        1000, 1000 * 1000, 1000 * 1000 * 1000,
+        1024, 1024 * 1024, 1024 * 1024 * 1024
+    };
+
+    private static void printHelp(PrintStream out) {
+        out.println("Arguments (Can be used in any order):");
+        out.println("-out [output file] - Sets the output file (e.g.: ./directory/name or ./directory/name.001) [REQUIRED]");
+        out.print("-size [sizeInBytes/");
+        for (int i = 0; i < units.length; i++) {
+            out.print("size");
+            out.print("_");
+            out.print(units[i]);
+            if (i != (units.length - 1)) {
+                out.print("/");
             }
         }
-        
-        List<Path> inputs = new ArrayList<>();
-        
-        if (inputsString != null) {
-            for (int i = 0; i < inputsString.length; i++) {
-                inputs.add(Path.of(inputsString[i]));
-            }
+        out.println("] - Sets the part size [REQUIRED]");
+
+        out.print("-hash [");
+        for (ChecksumAlgorithm a : ChecksumAlgorithmFactory.getDefault().getAlgorithms()) {
+            out.print(a.getName());
+            out.print("/");
         }
-        
-        if (inputDirectoriesString != null) {
-            for (int i = 0; i < inputDirectoriesString.length; i++) {
-                inputs.addAll(Files.list(Path.of(inputDirectoriesString[i])).toList());
-            }
+        out.println("NONE] - Sets the hash/checksum algorithm [DEFAULT IS SHA-256]");
+
+        out.print("-compression [");
+        for (CompressionAlgorithm a : CompressionAlgorithmFactory.getDefault().getAlgorithms()) {
+            out.print(a.getName() + "/");
+
+            out.print(a.getName());
+            out.print("_");
+            out.print(a.getMinCompressionLevel());
+            out.print("-");
+            out.print(a.getMaxCompressionLevel() - 1);
+            out.print("/");
         }
-        
-        new CreateCommand(output, partSize, hash, inputs.toArray(Path[]::new)).create();
-    }
-    
-    private final Path outputFile;
-    private final long partSize;
-    private final ChecksumAlgorithm hash;
-    private final Path[] inputs;
-    
-    public CreateCommand(Path outputFile, long partSize, ChecksumAlgorithm hash, Path[] inputs) {
-        this.outputFile = outputFile;
-        this.partSize = partSize;
-        this.hash = hash;
-        this.inputs = inputs;
+        out.println("none] - Sets the compression algorithm (and the respective level if needed) [DEFAULT IS gz_6]");
+
+        out.println("-in [file] - Adds a input file [NOT REQUIRED]");
+        out.println("-inDir [directory] - Adds the contents of a directory as input [NOT REQUIRED]");
     }
 
-    public void create() throws IOException, InterruptedException {
-        if (this.outputFile.getParent() != null) {
-            Files.createDirectories(this.outputFile.getParent());
+    public static void run(PrintStream out, String[] args) throws Exception {
+        if (args.length == 0) {
+            printHelp(out);
+            return;
+        }
+        if (args.length == 1 && args[0].equalsIgnoreCase("-help")) {
+            printHelp(out);
+            return;
+        }
+
+        Path outputFile = null;
+        long partSize = -1;
+        ChecksumAlgorithm hash = ChecksumAlgorithmFactory.getDefault().fromName("sha-256");
+        CompressionAlgorithm compression = CompressionAlgorithmFactory.getDefault().fromName("gz");
+        int compressionLevel = compression.getDefaultCompressionLevel();
+        List<Path> inputFiles = new ArrayList<>();
+
+        for (int i = 0; i < args.length; i++) {
+            String argument = args[i].toLowerCase();
+            String nextArgument = null;
+            if ((i + 1) < args.length) {
+                nextArgument = args[i + 1];
+            }
+
+            if (nextArgument == null) {
+                out.println("A argument is required for " + argument);
+                out.println("Type -help for a list of arguments");
+                return;
+            }
+            
+            i++;
+            
+            switch (argument) {
+                case "-out" -> {
+                    if (outputFile != null) {
+                        out.println("Can't set output file twice!");
+                        return;
+                    }
+                    try {
+                        outputFile = Path.of(nextArgument);
+                    } catch (InvalidPathException ex) {
+                        out.println("Invalid path: " + nextArgument);
+                        ex.printStackTrace(out);
+                        return;
+                    }
+                }
+                case "-size" -> {
+                    if (partSize != -1) {
+                        out.println("Can't set part size twice!");
+                        return;
+                    }
+                    long multiplier = 1;
+
+                    String[] split = nextArgument.split("_", 2);
+                    if (split.length == 2) {
+                        long unit = -1;
+                        for (int j = 0; j < units.length; j++) {
+                            if (split[1].equalsIgnoreCase(units[j])) {
+                                unit = unitsSize[j];
+                                break;
+                            }
+                        }
+                        if (unit == -1) {
+                            out.println("Unknown unit: " + split[1]);
+                            return;
+                        }
+                        multiplier = unit;
+                    }
+
+                    try {
+                        partSize = Long.parseLong(split[0]) * multiplier;
+                        if (partSize <= 0) {
+                            throw new NumberFormatException("Negative or zero part size");
+                        }
+                    } catch (NumberFormatException ex) {
+                        out.println("Invalid part size: " + nextArgument);
+                        ex.printStackTrace(out);
+                        return;
+                    }
+                }
+                case "-hash" -> {
+                    if (nextArgument.equalsIgnoreCase("none")) {
+                        hash = null;
+                        continue;
+                    }
+                    hash = ChecksumAlgorithmFactory.getDefault().fromName(nextArgument);
+                    if (hash == null) {
+                        out.println("Unknown hash algorithm: " + nextArgument);
+                        return;
+                    }
+                }
+                case "-compression" -> {
+                    if (nextArgument.equalsIgnoreCase("none")) {
+                        compression = null;
+                        compressionLevel = -1;
+                        continue;
+                    }
+
+                    String[] split = nextArgument.split("_", 2);
+                    compression = CompressionAlgorithmFactory.getDefault().fromName(split[0]);
+                    if (compression == null) {
+                        out.println("Unknown compression algorithm: " + nextArgument);
+                        return;
+                    }
+
+                    compressionLevel = compression.getDefaultCompressionLevel();
+
+                    if (split.length == 2) {
+                        try {
+                            compressionLevel = Integer.parseInt(split[1]);
+                            if (compressionLevel < compression.getMinCompressionLevel()) {
+                                throw new NumberFormatException("compressionLevel < compression.getMinCompressionLevel()");
+                            }
+                            if (compressionLevel >= compression.getMaxCompressionLevel()) {
+                                throw new NumberFormatException("compressionLevel >= compression.getMaxCompressionLevel()");
+                            }
+                        } catch (NumberFormatException ex) {
+                            out.println("Invalid compression level: " + nextArgument);
+                            ex.printStackTrace(out);
+                            return;
+                        }
+                    }
+                }
+                case "-in" -> {
+                    try {
+                        inputFiles.add(Path.of(nextArgument));
+                    } catch (InvalidPathException ex) {
+                        out.println("Invalid input path: " + nextArgument);
+                        ex.printStackTrace(out);
+                        return;
+                    }
+                }
+                case "-indir" -> {
+                    Path directory;
+                    try {
+                        directory = Path.of(nextArgument);
+                    } catch (InvalidPathException ex) {
+                        out.println("Invalid input directory path: " + nextArgument);
+                        ex.printStackTrace(out);
+                        return;
+                    }
+
+                    if (!Files.isDirectory(directory)) {
+                        out.println("Not a directory: " + nextArgument);
+                        return;
+                    }
+
+                    try {
+                        inputFiles.addAll(Files.list(directory).toList());
+                    } catch (IOException ex) {
+                        out.println("Failed to add files of: " + nextArgument);
+                        ex.printStackTrace(out);
+                        return;
+                    }
+                }
+                default -> {
+                    out.println("Unknown argument: " + argument);
+                    out.println("Type -help for a list of arguments");
+                    return;
+                }
+            }
+        }
+
+        if (outputFile == null) {
+            out.println("A output file is required!");
+            return;
+        }
+
+        if (partSize <= 0) {
+            out.println("A part size is required!");
+            return;
         }
         
-        try (PartOutputStream out = new PartOutputStream(this.outputFile, this.partSize, this.hash)) {
-            try (XZOutputStream gzip = new XZOutputStream(out, new LZMA2Options(9))) {
-                try (ZipOutputStream zip = new ZipOutputStream(gzip, StandardCharsets.UTF_8)) {
-                    ZipCreator writer = new ZipCreator(zip, this.inputs, this.hash) {
+        outputFile = outputFile.toAbsolutePath();
+        Path parent = outputFile.getParent();
+        if (parent == null) {
+            out.println("Output file has no parent!");
+            return;
+        }
+        Path nameFile = outputFile.getFileName();
+        if (nameFile == null) {
+            out.println("Output file has no name!");
+            return;
+        }
+        String filename = nameFile.toString();
+        if (!filename.endsWith(".001")) {
+            filename += "." + ZipCreator.EXTENSION;
+            if (compression != null) {
+                filename += "." + compression.getExtension(0);
+            }
+            filename += ".001";
+        }
+        outputFile = parent.resolve(filename);
+        
+        try {
+            create(out, outputFile, partSize, hash, compression, compressionLevel, inputFiles);
+        } catch (IOException ex) {
+            out.println("Operation Failed!");
+            ex.printStackTrace(out);
+        } catch (InterruptedException ex) {
+            out.print("Canceled");
+        }
+    }
+    
+    private static OutputStream getCompressedStream(
+            OutputStream out,
+            CompressionAlgorithm compression, int compressionLevel
+    ) throws IOException {
+        if (compression == null) {
+            return new BufferedOutputStream(out);
+        }
+        return compression.compress(out, compressionLevel);
+    }
+    
+    private static void create(
+            PrintStream out,
+            Path outputFile,
+            long partSize,
+            ChecksumAlgorithm hash,
+            CompressionAlgorithm compression, int compressionLevel,
+            List<Path> inputFiles
+    ) throws IOException, InterruptedException {
+        if (outputFile.getParent() != null) {
+            Files.createDirectories(outputFile.getParent());
+        }
+        
+        try (PartOutputStream partOut = new PartOutputStream(outputFile, partSize, hash)) {
+            try (OutputStream compressedStream = getCompressedStream(partOut, compression, compressionLevel)) {
+                try (ZipOutputStream zipOut = new ZipOutputStream(compressedStream, StandardCharsets.UTF_8)) {
+                    ZipCreator writer = new ZipCreator(zipOut, inputFiles.toArray(Path[]::new), hash) {
                         @Override
                         protected void onFile(Path file) {
-                            System.out.println(file.toString());
+                            out.println(file.toString());
                         }
-
+                        
                         @Override
                         protected void onFileError(Path file, IOException reason) {
-                            System.out.println("Error on: " + file.toString());
-                            reason.printStackTrace(System.out);
+                            out.println("Error on: " + file.toString());
+                            reason.printStackTrace(out);
                         }
                     };
                     writer.create();
                 }
             }
         }
+        
+        out.println("Done!");
     }
-
+    
 }
