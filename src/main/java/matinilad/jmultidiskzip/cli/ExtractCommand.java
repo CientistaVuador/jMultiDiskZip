@@ -26,6 +26,8 @@
  */
 package matinilad.jmultidiskzip.cli;
 
+import java.io.BufferedInputStream;
+import java.io.Console;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.PrintStream;
@@ -33,6 +35,7 @@ import java.io.PushbackInputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
+import java.util.Arrays;
 import java.util.HexFormat;
 import java.util.Scanner;
 import java.util.zip.ZipInputStream;
@@ -41,6 +44,7 @@ import matinilad.jmultidiskzip.api.ZipChecksumTester;
 import matinilad.jmultidiskzip.api.ZipExtractor;
 import matinilad.jmultidiskzip.api.compression.CompressionAlgorithm;
 import matinilad.jmultidiskzip.api.compression.CompressionAlgorithmFactory;
+import matinilad.jmultidiskzip.api.utils.EncryptedInputStream;
 
 /**
  *
@@ -53,6 +57,7 @@ public class ExtractCommand {
         out.println("-in [part one] - Sets the part one file input (e.g: ./dir/name.001) [REQUIRED]");
         out.println("-out [directory] - Sets the output directory, files will be extracted to this directory [REQUIRED]");
         out.println("-noVerify - Disables file integrity verification [NOT REQUIRED]");
+        out.println("-decrypt - Use this if the part files are encrypted [NOT REQUIRED]");
     }
 
     public static void run(PrintStream out, String[] args) throws Exception {
@@ -67,7 +72,8 @@ public class ExtractCommand {
 
         Path partOne = null;
         Path outputDirectory = null;
-        boolean verifyFiles = false;
+        boolean verifyFiles = true;
+        boolean decrypt = false;
 
         for (int i = 0; i < args.length; i++) {
             String argument = args[i].toLowerCase();
@@ -78,7 +84,11 @@ public class ExtractCommand {
 
             switch (argument) {
                 case "-noverify" -> {
-                    verifyFiles = true;
+                    verifyFiles = false;
+                    continue;
+                }
+                case "-decrypt" -> {
+                    decrypt = true;
                     continue;
                 }
             }
@@ -99,6 +109,9 @@ public class ExtractCommand {
                     }
                     try {
                         partOne = Path.of(nextArgument);
+                        if (partOne.getFileName() == null) {
+                            throw new InvalidPathException(nextArgument, "empty filename");
+                        }
                     } catch (InvalidPathException ex) {
                         out.println("Invalid path: " + nextArgument);
                         ex.printStackTrace(out);
@@ -136,8 +149,18 @@ public class ExtractCommand {
             return;
         }
 
+        if (!decrypt && partOne.getFileName().toString().toLowerCase().endsWith(".bin.001")) {
+            Scanner scanner = new Scanner(System.in);
+            out.println("Is " + partOne.toString() + " encrypted?");
+            out.print("[Y/N]");
+            String output = scanner.nextLine();
+            if (output != null && (output.equalsIgnoreCase("y") || output.equalsIgnoreCase("yes"))) {
+                decrypt = true;
+            }
+        }
+        
         try {
-            extract(out, partOne, outputDirectory, verifyFiles);
+            extract(out, partOne, outputDirectory, verifyFiles, decrypt);
         } catch (IOException ex) {
             out.println("Operation failed!");
             ex.printStackTrace(out);
@@ -157,15 +180,65 @@ public class ExtractCommand {
         if (compression == null) {
             return pushBack;
         }
-
+        
         return compression.decompress(pushBack);
+    }
+    
+    private static InputStream verifyZipFile(InputStream in) throws IOException {
+        PushbackInputStream pushBack = new PushbackInputStream(in, 4);
+        
+        byte[] magicBytes = pushBack.readNBytes(4);
+        pushBack.unread(magicBytes);
+        
+        boolean found = false;
+        String[] zipMagic = {
+            "504B0304", "504B0506", "504B0708"
+        };
+        String magic = HexFormat.of().formatHex(magicBytes).toUpperCase();
+        for (int i = 0; i < zipMagic.length; i++) {
+            if (magic.startsWith(zipMagic[i])) {
+                found = true;
+                break;
+            }
+        }
+        if (!found) {
+            throw new IOException("Invalid zip file");
+        }
+        
+        return pushBack;
+    }
+
+    private static InputStream getDecryptedStream(InputStream in, boolean decrypt) throws IOException {
+        if (!decrypt) {
+            return new BufferedInputStream(in);
+        }
+
+        Console console = System.console();
+        if (console == null) {
+            throw new IOException("Console is not available for password reading");
+        }
+
+        char[] password = null;
+        try {
+            password = console.readPassword("[%s]", "Password:");
+            if (password == null || password.length == 0) {
+                throw new IOException("Empty password");
+            }
+
+            return new EncryptedInputStream(in, password);
+        } finally {
+            if (password != null) {
+                Arrays.fill(password, '\0');
+            }
+        }
     }
 
     private static void extract(
             PrintStream out,
             Path partOne,
             Path outputDirectory,
-            boolean verifyFiles
+            boolean verifyFiles,
+            boolean decrypt
     ) throws IOException, InterruptedException {
         Scanner scanner = new Scanner(System.in);
 
@@ -185,42 +258,44 @@ public class ExtractCommand {
                         path = Path.of(input);
                         continueSignal(path, false);
                     } catch (InvalidPathException ex) {
-                        out.println("Invalid path: "+input);
+                        out.println("Invalid path: " + input);
                         ex.printStackTrace(out);
                     }
                 }
             }
         }) {
-            try (InputStream compressed = getDecompressedStream(in)) {
-                try (ZipInputStream zip = new ZipInputStream(compressed, StandardCharsets.UTF_8)) {
-                    ZipExtractor extractor = new ZipExtractor(zip, outputDirectory) {
-                        @Override
-                        protected void onFile(Path file) {
-                            out.println(file.toString());
-                        }
-                        
-                        @Override
-                        protected void onFileError(Path file, IOException reason) {
-                            out.println("Error on: " + file.toString());
-                            reason.printStackTrace(System.out);
-                        }
-                    };
-                    ZipChecksumTester tester = null;
-                    if (verifyFiles) {
-                        tester = new ZipChecksumTester() {
+            try (InputStream decrypted = getDecryptedStream(in, decrypt)) {
+                try (InputStream compressed = verifyZipFile(getDecompressedStream(decrypted))) {
+                    try (ZipInputStream zip = new ZipInputStream(compressed, StandardCharsets.UTF_8)) {
+                        ZipExtractor extractor = new ZipExtractor(zip, outputDirectory) {
                             @Override
                             protected void onFile(Path file) {
-                                out.println("Verifying " + file.toString());
+                                out.println(file.toString());
                             }
 
                             @Override
                             protected void onFileError(Path file, IOException reason) {
-                                out.println("Failed " + file.toString());
-                                reason.printStackTrace(System.out);
+                                out.println("Error on: " + file.toString());
+                                reason.printStackTrace(out);
                             }
                         };
+                        ZipChecksumTester tester = null;
+                        if (verifyFiles) {
+                            tester = new ZipChecksumTester() {
+                                @Override
+                                protected void onFile(Path file) {
+                                    out.println("Verifying " + file.toString());
+                                }
+
+                                @Override
+                                protected void onFileError(Path file, IOException reason) {
+                                    out.println("Failed " + file.toString());
+                                    reason.printStackTrace(out);
+                                }
+                            };
+                        }
+                        extractor.extract(tester);
                     }
-                    extractor.extract(tester);
                 }
             }
         }

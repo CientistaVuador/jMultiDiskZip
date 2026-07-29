@@ -27,9 +27,14 @@
 package matinilad.jmultidiskzip.api;
 
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Comparator;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Objects;
 import java.util.Set;
 import java.util.function.Consumer;
@@ -58,7 +63,7 @@ public class ArchivePathStream {
         private final Path root;
         private final Path path;
         private final IOException error;
-        
+
         public Entry(Path root, Path path, IOException error) {
             this.root = root;
             this.path = path;
@@ -91,72 +96,102 @@ public class ArchivePathStream {
         return inputs.clone();
     }
 
-    private void process(Set<String> names, Consumer<Entry> consumer, Path root, Path path) {
-        if (root == null) {
+    private List<Path> preprocess(List<Path> list, Consumer<Entry> consumer) {
+        List<Path> directories = new ArrayList<>();
+        List<Path> files = new ArrayList<>();
+
+        for (Path e : list) {
+            Path real;
             try {
-                path = path.toRealPath();
+                real = e.toRealPath();
             } catch (IOException ex) {
-                consumer.accept(new Entry(root, path, ex));
-                return;
+                consumer.accept(new Entry(null, e, ex));
+                continue;
             }
 
-            root = path.getParent();
-            if (root == null) {
-                Stream<Path> stream;
-                try {
-                    stream = Files.list(path);
-                } catch (IOException ex) {
-                    consumer.accept(new Entry(root, path, ex));
-                    return;
+            Path parent = real.getParent();
+            if (parent == null) {
+                if (!Files.isDirectory(real)) {
+                    consumer.accept(new Entry(null, real, new IOException("root directory is not a directory")));
+                    continue;
                 }
-
-                final Path finalRoot = path;
-                stream.forEach((e) -> {
-                    String name = e.getFileName().toString();
-                    if (!LINUX_OS) {
-                        name = name.toLowerCase();
-                    }
-                    if (!names.add(name)) {
-                        consumer.accept(new Entry(finalRoot, e, new IOException("duplicated filename")));
-                        return;
-                    }
-                    process(names, consumer, finalRoot, e);
-                });
-                return;
+                try {
+                    List<Path> dir = new ArrayList<>();
+                    List<Path> fil = new ArrayList<>();
+                    Files.list(real).forEach((c) -> {
+                        if (Files.isDirectory(c)) {
+                            dir.add(c);
+                        } else if (Files.isRegularFile(c)) {
+                            fil.add(c);
+                        }
+                    });
+                    directories.addAll(dir);
+                    files.addAll(fil);
+                } catch (IOException ex) {
+                    consumer.accept(new Entry(null, real, ex));
+                    continue;
+                } catch (UncheckedIOException ex) {
+                    consumer.accept(new Entry(null, real, ex.getCause()));
+                    continue;
+                }
+                continue;
             }
 
-            String name = path.getFileName().toString();
-            if (!LINUX_OS) {
-                name = name.toLowerCase();
-            }
-            if (!names.add(name)) {
-                consumer.accept(new Entry(root, path, new IOException("duplicated filename")));
-                return;
+            if (Files.isDirectory(real)) {
+                directories.add(real);
+            } else if (Files.isRegularFile(real)) {
+                files.add(real);
             }
         }
 
+        Comparator<Path> comparator = (o1, o2) -> {
+            return String.CASE_INSENSITIVE_ORDER
+                    .compare(o1.getFileName().toString(), o2.getFileName().toString());
+        };
+
+        files.sort(comparator);
+        directories.sort(comparator);
+
+        List<Path> output = new ArrayList<>();
+        output.addAll(files);
+        output.addAll(directories);
+        return output;
+    }
+
+    private void process(Consumer<Entry> consumer, Path root, Path path) {
         if (Files.isDirectory(path)) {
-            Stream<Path> stream;
             try {
-                stream = Files.list(path);
+                List<Path> preprocessed = preprocess(Files.list(path).toList(), consumer);
+                for (Path p:preprocessed) {
+                    process(consumer, root, p);
+                }
             } catch (IOException ex) {
-                consumer.accept(new Entry(root, path, ex));
+                consumer.accept(new Entry(null, path, ex));
+                return;
+            } catch (UncheckedIOException ex) {
+                consumer.accept(new Entry(null, path, ex.getCause()));
                 return;
             }
-
-            final Path finalRoot = root;
-            stream.forEach((e) -> {
-                process(names, consumer, finalRoot, e);
-            });
         }
-
+        
         consumer.accept(new Entry(root, path, null));
     }
 
     public void stream(Consumer<Entry> consumer) {
         Set<String> names = new HashSet<>();
-        for (Path e : this.inputs) {
-            process(names, consumer, null, e);
+        
+        List<Path> preprocessed = preprocess(Arrays.asList(this.inputs), consumer);
+        for (Path e : preprocessed) {
+            String name = e.getFileName().toString();
+            if (!LINUX_OS) {
+                name = name.toLowerCase();
+            }
+            if (!names.add(name)) {
+                consumer.accept(new Entry(null, e, new IOException("duplicated filename")));
+                continue;
+            }
+            
+            process(consumer, e.getParent(), e);
         }
     }
 }

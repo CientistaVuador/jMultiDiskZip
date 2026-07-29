@@ -124,106 +124,104 @@ public class ZipExtractor {
 
     public void extract(ZipChecksumTester tester) throws IOException, InterruptedException {
         ByteArrayOutputStream fallbackChecksums = new ByteArrayOutputStream();
-        ZipOutputStream fallbackChecksumsZip = new ZipOutputStream(fallbackChecksums, StandardCharsets.UTF_8);
-
-        this.checksumsZip = null;
-
-        if (!Files.exists(this.output)) {
-            Files.createDirectories(this.output);
-            if (!Files.isDirectory(this.output)) {
-                throw new IOException("failed to create output directory!");
-            }
-        } else if (!Files.isDirectory(this.output)) {
-            throw new IOException("output path is not a directory!");
-        }
-
-        ZipEntry entry;
-        while ((entry = this.input.getNextEntry()) != null) {
-            if (onShouldInterrupt()) {
-                throw new InterruptedException();
-            }
-
-            if (entry.getName().equals(ZipCreator.CHECKSUMS_ZIP_FILENAME)) {
-                this.checksumsZip = new ZipInputStream(new ByteArrayInputStream(this.input.readAllBytes()), StandardCharsets.UTF_8);
-                continue;
-            }
-
-            Path entryPath = this.output.resolve(getEntryPath(entry.getName()));
-            onFile(entryPath);
-
-            if (tester != null) {
-                addFallbackChecksum(fallbackChecksumsZip, entry);
-            }
-
-            FileTime fallback = FileTime.from(Instant.now());
-            FileTime created = Objects.requireNonNullElse(entry.getCreationTime(), fallback);
-            FileTime modified = Objects.requireNonNullElse(entry.getLastModifiedTime(), fallback);
-            FileTime access = Objects.requireNonNullElse(entry.getLastAccessTime(), fallback);
-
-            if (entry.isDirectory()) {
-                if (!Files.exists(entryPath)) {
-                    Files.createDirectories(entryPath);
+        try (ZipOutputStream fallbackChecksumsZip = new ZipOutputStream(fallbackChecksums, StandardCharsets.UTF_8)) {
+            this.checksumsZip = null;
+            
+            if (!Files.exists(this.output)) {
+                Files.createDirectories(this.output);
+                if (!Files.isDirectory(this.output)) {
+                    throw new IOException("failed to create output directory!");
                 }
-                if (!Files.isDirectory(entryPath)) {
-                    onFileError(entryPath, new IOException("failed to create directory"));
+            } else if (!Files.isDirectory(this.output)) {
+                throw new IOException("output path is not a directory!");
+            }
+            
+            ZipEntry entry;
+            while ((entry = this.input.getNextEntry()) != null) {
+                if (onShouldInterrupt()) {
+                    throw new InterruptedException();
+                }
+                
+                if (entry.getName().equals(ZipCreator.CHECKSUMS_ZIP_FILENAME)) {
+                    this.checksumsZip = new ZipInputStream(new ByteArrayInputStream(this.input.readAllBytes()), StandardCharsets.UTF_8);
                     continue;
                 }
-
-                BasicFileAttributeView view = Files.getFileAttributeView(entryPath, BasicFileAttributeView.class);
-                view.setTimes(modified, access, created);
-                continue;
-            }
-
-            Path parent = entryPath.getParent();
-            if (parent != null) {
-                if (!Files.exists(parent)) {
-                    Files.createDirectories(parent);
+                
+                Path entryPath = this.output.resolve(getEntryPath(entry.getName()));
+                onFile(entryPath);
+                
+                if (tester != null) {
+                    addFallbackChecksum(fallbackChecksumsZip, entry);
                 }
-                if (!Files.isDirectory(parent)) {
-                    onFileError(entryPath, new IOException("failed to create parent directory"));
+                
+                FileTime fallback = FileTime.from(Instant.now());
+                FileTime created = Objects.requireNonNullElse(entry.getCreationTime(), fallback);
+                FileTime modified = Objects.requireNonNullElse(entry.getLastModifiedTime(), fallback);
+                FileTime access = Objects.requireNonNullElse(entry.getLastAccessTime(), fallback);
+                
+                if (entry.isDirectory()) {
+                    if (!Files.exists(entryPath)) {
+                        Files.createDirectories(entryPath);
+                    }
+                    if (!Files.isDirectory(entryPath)) {
+                        onFileError(entryPath, new IOException("failed to create directory"));
+                        continue;
+                    }
+                    
+                    BasicFileAttributeView view = Files.getFileAttributeView(entryPath, BasicFileAttributeView.class);
+                    view.setTimes(modified, access, created);
                     continue;
                 }
-            }
-
-            if (Files.exists(entryPath)) {
-                if (Files.isDirectory(entryPath)) {
-                    onFileError(entryPath, new IOException("path is a directory"));
-                    continue;
-                }
-                if (!onShouldReplaceFile(entryPath, entry.getSize())) {
-                    continue;
-                }
-            }
-
-            try {
-                long fileSize = entry.getSize();
-                long count = 0;
-
-                onFileProgress(entryPath, count, fileSize);
-                try (OutputStream out = Files.newOutputStream(entryPath)) {
-                    byte[] buffer = new byte[16384];
-                    int r;
-                    while ((r = this.input.read(buffer, 0, buffer.length)) != -1) {
-                        if (onShouldInterrupt()) {
-                            throw new InterruptedException();
-                        }
-
-                        out.write(buffer, 0, r);
-                        count += r;
-                        onFileProgress(entryPath, count, fileSize);
+                
+                Path parent = entryPath.getParent();
+                if (parent != null) {
+                    if (!Files.exists(parent)) {
+                        Files.createDirectories(parent);
+                    }
+                    if (!Files.isDirectory(parent)) {
+                        onFileError(entryPath, new IOException("failed to create parent directory"));
+                        continue;
                     }
                 }
-
-                BasicFileAttributeView view = Files.getFileAttributeView(entryPath, BasicFileAttributeView.class);
-                view.setTimes(modified, access, created);
-            } catch (IOException ex) {
-                onFileError(entryPath, ex);
+                
+                if (Files.exists(entryPath)) {
+                    if (Files.isDirectory(entryPath)) {
+                        onFileError(entryPath, new IOException("path is a directory"));
+                        continue;
+                    }
+                    if (!onShouldReplaceFile(entryPath, entry.getSize())) {
+                        continue;
+                    }
+                }
+                
+                try {
+                    long fileSize = entry.getSize();
+                    long count = 0;
+                    
+                    onFileProgress(entryPath, count, fileSize);
+                    try (OutputStream out = Files.newOutputStream(entryPath)) {
+                        byte[] buffer = new byte[16384];
+                        int r;
+                        while ((r = this.input.read(buffer, 0, buffer.length)) != -1) {
+                            if (onShouldInterrupt()) {
+                                throw new InterruptedException();
+                            }
+                            
+                            out.write(buffer, 0, r);
+                            count += r;
+                            onFileProgress(entryPath, count, fileSize);
+                        }
+                    }
+                    
+                    BasicFileAttributeView view = Files.getFileAttributeView(entryPath, BasicFileAttributeView.class);
+                    view.setTimes(modified, access, created);
+                } catch (IOException ex) {
+                    onFileError(entryPath, ex);
+                }
             }
         }
-
         if (tester != null) {
             if (this.checksumsZip == null) {
-                fallbackChecksumsZip.close();
                 this.checksumsZip = new ZipInputStream(new ByteArrayInputStream(fallbackChecksums.toByteArray()), StandardCharsets.UTF_8);
             }
             tester.test(this.output, this.checksumsZip);
