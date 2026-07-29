@@ -27,17 +27,22 @@
 package matinilad.jmultidiskzip.api;
 
 import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
+import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.BasicFileAttributeView;
 import java.nio.file.attribute.FileTime;
 import java.time.Instant;
+import java.util.HexFormat;
 import java.util.Objects;
+import java.util.zip.CRC32;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
+import java.util.zip.ZipOutputStream;
 
 /**
  *
@@ -92,7 +97,35 @@ public class ZipExtractor {
         return true;
     }
 
+    private void addFallbackChecksum(ZipOutputStream out, ZipEntry entry) throws IOException {
+        if (entry.isDirectory()) {
+            out.putNextEntry(entry);
+            out.closeEntry();
+        } else {
+            byte[] crc32 = HexFormat.of()
+                    .formatHex(ByteBuffer.allocate(4).putInt((int) entry.getCrc()).array())
+                    .getBytes(StandardCharsets.UTF_8);
+
+            ZipEntry crc32Entry = new ZipEntry(entry.getName() + ".crc32");
+
+            crc32Entry.setMethod(ZipEntry.STORED);
+            crc32Entry.setSize(crc32.length);
+            crc32Entry.setCompressedSize(crc32.length);
+
+            CRC32 crc = new CRC32();
+            crc.update(crc32);
+            crc32Entry.setCrc(crc.getValue());
+
+            out.putNextEntry(crc32Entry);
+            out.write(crc32);
+            out.closeEntry();
+        }
+    }
+
     public void extract(ZipChecksumTester tester) throws IOException, InterruptedException {
+        ByteArrayOutputStream fallbackChecksums = new ByteArrayOutputStream();
+        ZipOutputStream fallbackChecksumsZip = new ZipOutputStream(fallbackChecksums, StandardCharsets.UTF_8);
+
         this.checksumsZip = null;
 
         if (!Files.exists(this.output)) {
@@ -117,6 +150,10 @@ public class ZipExtractor {
 
             Path entryPath = this.output.resolve(getEntryPath(entry.getName()));
             onFile(entryPath);
+
+            if (tester != null) {
+                addFallbackChecksum(fallbackChecksumsZip, entry);
+            }
 
             FileTime fallback = FileTime.from(Instant.now());
             FileTime created = Objects.requireNonNullElse(entry.getCreationTime(), fallback);
@@ -161,7 +198,7 @@ public class ZipExtractor {
             try {
                 long fileSize = entry.getSize();
                 long count = 0;
-                
+
                 onFileProgress(entryPath, count, fileSize);
                 try (OutputStream out = Files.newOutputStream(entryPath)) {
                     byte[] buffer = new byte[16384];
@@ -170,7 +207,7 @@ public class ZipExtractor {
                         if (onShouldInterrupt()) {
                             throw new InterruptedException();
                         }
-                        
+
                         out.write(buffer, 0, r);
                         count += r;
                         onFileProgress(entryPath, count, fileSize);
@@ -183,8 +220,12 @@ public class ZipExtractor {
                 onFileError(entryPath, ex);
             }
         }
-        
-        if (tester != null && this.checksumsZip != null) {
+
+        if (tester != null) {
+            if (this.checksumsZip == null) {
+                fallbackChecksumsZip.close();
+                this.checksumsZip = new ZipInputStream(new ByteArrayInputStream(fallbackChecksums.toByteArray()), StandardCharsets.UTF_8);
+            }
             tester.test(this.output, this.checksumsZip);
         }
     }

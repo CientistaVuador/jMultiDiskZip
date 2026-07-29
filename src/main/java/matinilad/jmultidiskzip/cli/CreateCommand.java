@@ -283,7 +283,7 @@ public class CreateCommand {
         }
         String filename = nameFile.toString();
         if (!filename.endsWith(".001")) {
-            filename += "." + ZipCreator.EXTENSION;
+            filename += ".zip";
             if (compression != null) {
                 filename += "." + compression.getExtension(0);
             }
@@ -294,7 +294,7 @@ public class CreateCommand {
         try {
             create(out, outputFile, partSize, hash, compression, compressionLevel, inputFiles);
         } catch (IOException ex) {
-            out.println("Operation Failed!");
+            out.println("Operation failed!");
             ex.printStackTrace(out);
         } catch (InterruptedException ex) {
             out.print("Canceled");
