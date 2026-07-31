@@ -163,10 +163,10 @@ public class EncryptedInputStream extends FilterInputStream {
                     | ((decrypted[1] & 0xFF) << 16)
                     | ((decrypted[2] & 0xFF) << 8)
                     | ((decrypted[3] & 0xFF) << 0);
-
+            
             this.buffer = Arrays.copyOfRange(decrypted, 4, decrypted.length);
             this.bufferIndex = 0;
-
+            
             this.cipher.init(Cipher.DECRYPT_MODE, this.key, nextIV());
             this.cipher.updateAAD(encrypted, encrypted.length - 16, 16);
         } catch (InvalidKeyException | InvalidAlgorithmParameterException | IllegalBlockSizeException | BadPaddingException ex) {

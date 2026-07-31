@@ -38,6 +38,7 @@ import java.nio.file.attribute.FileTime;
 import java.util.HexFormat;
 import java.util.Objects;
 import java.util.zip.CRC32;
+import java.util.zip.GZIPOutputStream;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 import matinilad.jmultidiskzip.api.checksum.Checksum;
@@ -49,7 +50,7 @@ import matinilad.jmultidiskzip.api.checksum.ChecksumAlgorithm;
  */
 public class ZipCreator {
 
-    public static final String CHECKSUMS_ZIP_FILENAME = "jMultiDiskZip_checksums.zip";
+    public static final String CHECKSUMS_ZIP_FILENAME = "jMultiDiskZip_checksums.zip.gz";
     
     private final ZipOutputStream output;
     private final ArchivePathStream pathStream;
@@ -93,7 +94,7 @@ public class ZipCreator {
 
         if (this.hash != null) {
             this.checksumsStream = new ByteArrayOutputStream();
-            this.checksumsZip = new ZipOutputStream(this.checksumsStream, StandardCharsets.UTF_8);
+            this.checksumsZip = new ZipOutputStream(new GZIPOutputStream(this.checksumsStream), StandardCharsets.UTF_8);
         } else {
             this.checksumsStream = null;
             this.checksumsZip = null;
@@ -154,7 +155,7 @@ public class ZipCreator {
             entry.setLastModifiedTime(attributes.lastModifiedTime());
             entry.setLastAccessTime(attributes.lastAccessTime());
         } catch (UnsupportedOperationException ex) {
-            //todo?
+            onFileError(file, new IOException("failed to get file timestamps", ex));
         }
 
         if (isFile) {

@@ -24,11 +24,12 @@
  *
  * For more information, please refer to <https://unlicense.org>
  */
-package matinilad.jmultidiskzip.cli;
+package matinilad.jmultidiskzip.ui.cli;
 
 import java.io.BufferedOutputStream;
 import java.io.Console;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.OutputStream;
 import java.io.PrintStream;
 import java.nio.charset.StandardCharsets;
@@ -102,7 +103,7 @@ public class CreateCommand {
         out.println("-encrypt - Encrypts the output with a password [NOT REQUIRED]");
     }
 
-    public static void run(PrintStream out, String[] args) throws Exception {
+    public static void run(InputStream in, PrintStream out, String[] args) throws Exception {
         if (args.length == 0) {
             printHelp(out);
             return;

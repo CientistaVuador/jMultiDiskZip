@@ -24,8 +24,9 @@
  *
  * For more information, please refer to <https://unlicense.org>
  */
-package matinilad.jmultidiskzip.cli;
+package matinilad.jmultidiskzip.ui.cli;
 
+import java.io.InputStream;
 import java.io.PrintStream;
 import java.util.Arrays;
 
@@ -41,17 +42,17 @@ public class CLInterface {
         out.println("-extract (Extracts a ZIP file with multiple volumes)");
     }
     
-    public static void run(PrintStream out, String[] args) throws Exception {
+    public static void run(InputStream in, PrintStream out, String[] args) throws Exception {
         if (args.length == 0) {
             printHelp(out);
             return;
         }
         switch (args[0]) {
             case "-create" -> {
-                CreateCommand.run(out, Arrays.copyOfRange(args, 1, args.length));
+                CreateCommand.run(in, out, Arrays.copyOfRange(args, 1, args.length));
             }
             case "-extract" -> {
-                ExtractCommand.run(out, Arrays.copyOfRange(args, 1, args.length));
+                ExtractCommand.run(in, out, Arrays.copyOfRange(args, 1, args.length));
             }
             default -> {
                 if (!args[0].equals("-help")) {

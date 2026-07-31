@@ -38,7 +38,6 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Set;
 import java.util.function.Consumer;
-import java.util.stream.Stream;
 
 /**
  *
@@ -159,6 +158,8 @@ public class ArchivePathStream {
     }
 
     private void process(Consumer<Entry> consumer, Path root, Path path) {
+        consumer.accept(new Entry(root, path, null));
+        
         if (Files.isDirectory(path)) {
             try {
                 List<Path> preprocessed = preprocess(Files.list(path).toList(), consumer);
@@ -167,14 +168,10 @@ public class ArchivePathStream {
                 }
             } catch (IOException ex) {
                 consumer.accept(new Entry(null, path, ex));
-                return;
             } catch (UncheckedIOException ex) {
                 consumer.accept(new Entry(null, path, ex.getCause()));
-                return;
             }
         }
-        
-        consumer.accept(new Entry(root, path, null));
     }
 
     public void stream(Consumer<Entry> consumer) {

@@ -26,9 +26,10 @@
  */
 package matinilad.jmultidiskzip;
 
+import java.io.InputStream;
 import java.io.PrintStream;
 import java.util.Arrays;
-import matinilad.jmultidiskzip.cli.CLInterface;
+import matinilad.jmultidiskzip.ui.cli.CLInterface;
 
 /**
  *
@@ -42,6 +43,7 @@ public class Main {
     }
     
     public static void main(String[] args) throws Exception {
+        InputStream in = System.in;
         PrintStream out = System.out;
         
         if (args.length == 0) {
@@ -50,7 +52,7 @@ public class Main {
         }
         switch (args[0]) {
             case "-cli" -> {
-                CLInterface.run(out, Arrays.copyOfRange(args, 1, args.length));
+                CLInterface.run(in, out, Arrays.copyOfRange(args, 1, args.length));
             }
             default -> {
                 if (!args[0].equals("-help")) {

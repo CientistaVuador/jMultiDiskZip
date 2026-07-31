@@ -56,7 +56,7 @@ import javax.crypto.spec.SecretKeySpec;
 public class EncryptedOutputStream extends FilterOutputStream {
 
     public static final String MAGIC = "EncryptedStream1";
-
+    
     private final byte[] userSalt;
     private final char[] password;
 

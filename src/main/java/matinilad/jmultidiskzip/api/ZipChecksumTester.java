@@ -61,7 +61,7 @@ public class ZipChecksumTester {
         return Thread.interrupted();
     }
 
-    protected void onFile(Path file) {
+    protected void onFile(Path file, boolean directory, ChecksumAlgorithm algorithm) {
 
     }
 
@@ -88,7 +88,7 @@ public class ZipChecksumTester {
             Path entryPath = directory.resolve(ZipExtractor.getEntryPath(entry.getName()));
             
             if (entry.isDirectory()) {
-                onFile(entryPath);
+                onFile(entryPath, true, null);
                 if (!Files.isDirectory(entryPath)) {
                     onFileError(entryPath, new IOException("not a directory"));
                 }
@@ -101,9 +101,9 @@ public class ZipChecksumTester {
             String entryPathString = entryPath.toString();
             entryPath = Path.of(entryPathString.substring(0, entryPathString.length() - (lastExtension.length() + 1)));
             
-            onFile(entryPath);
-            
             ChecksumAlgorithm hashAlgorithm = this.checksumFactory.fromExtension(lastExtension);
+            
+            onFile(entryPath, false, hashAlgorithm);
             if (hashAlgorithm == null) {
                 onFileError(entryPath, new IOException("unknown hash extension"));
                 continue;
