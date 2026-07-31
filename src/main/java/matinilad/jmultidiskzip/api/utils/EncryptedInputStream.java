@@ -66,7 +66,8 @@ public class EncryptedInputStream extends FilterInputStream {
     }
 
     private final char[] password;
-
+    private final int maxBufferSize;
+    
     private boolean header = false;
 
     private SecretKey key = null;
@@ -79,10 +80,21 @@ public class EncryptedInputStream extends FilterInputStream {
     private int bufferIndex = 0;
 
     private boolean closed = false;
-
-    public EncryptedInputStream(InputStream in, char[] password) {
+    
+    public EncryptedInputStream(InputStream in, char[] password, int maxBufferSize) {
         super(Objects.requireNonNull(in, "in is null"));
         this.password = password.clone();
+        if (maxBufferSize < 1) {
+            throw new IllegalArgumentException("maxBufferSize < 1");
+        }
+        if (maxBufferSize > EncryptedOutputStream.MAX_BUFFER_SIZE) {
+            throw new IllegalArgumentException("maxBufferSize > MAX_BUFFER_SIZE");
+        }
+        this.maxBufferSize = maxBufferSize;
+    }
+    
+    public EncryptedInputStream(InputStream in, char[] password) {
+        this(in, password, EncryptedOutputStream.MAX_BUFFER_SIZE);
     }
 
     private GCMParameterSpec nextIV() {
@@ -151,6 +163,10 @@ public class EncryptedInputStream extends FilterInputStream {
 
     private void readBuffer() throws IOException {
         try {
+            if (this.nextBufferSize > this.maxBufferSize) {
+                throw new IOException("nextBufferSize > maxBufferSize");
+            }
+            
             int encryptedSize = 4 + this.nextBufferSize + 16;
             byte[] encrypted = this.in.readNBytes(encryptedSize);
             if (encrypted.length != encryptedSize) {

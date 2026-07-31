@@ -60,14 +60,14 @@ public class ExtractCommand {
 
     private static void printHelp(PrintStream out) {
         out.println("Arguments (Can be used in any order):");
-        out.println("-in [part one] - Sets the part one file input (e.g: ./dir/name.001) [REQUIRED]");
+        out.println("-in [part one] - Sets the part one file input (e.g.: ./dir/name.001) [REQUIRED]");
         out.println("-out [directory] - Sets the output directory, files will be extracted to this directory [REQUIRED]");
         out.println("-noVerify - Disables file integrity verification [NOT REQUIRED]");
-        out.println("-decrypt - Use this if the part files are encrypted [NOT REQUIRED]");
+        out.println("-decrypt - Use this if the input file is encrypted [NOT REQUIRED]");
         out.println("-zipInZip - Use this if the input file is a single zip file inside of a zip file [NOT REQUIRED]");
         out.println("-auto - Enables automatic mode, checks the part directory every few seconds instead of asking for a directory [NOT REQUIRED]");
-        out.println("-verbose - Enables verbose output mode, otherwise, only errors will be displayed [NOT REQUIRED]");
-        out.println("-replacePolicy [yesForAll/noForAll/ask] - If files should be replaced or not [DEFAULT IS ASK]");
+        out.println("-verbose - Enables verbose output mode, otherwise only errors will be displayed [NOT REQUIRED]");
+        out.println("-replaceFiles [yes/no/ask] - If files should be replaced or not [DEFAULT IS ASK]");
     }
 
     public static void run(InputStream in, PrintStream out, String[] args) throws Exception {
@@ -89,7 +89,7 @@ public class ExtractCommand {
         boolean zipInZip = false;
         boolean auto = false;
         boolean verbose = false;
-        int replacePolicy = 0;
+        int replaceFiles = 0;
 
         for (int i = 0; i < args.length; i++) {
             String argument = args[i].toLowerCase();
@@ -159,19 +159,19 @@ public class ExtractCommand {
                         return;
                     }
                 }
-                case "-replacepolicy" -> {
+                case "-replacefiles" -> {
                     switch (nextArgument.toLowerCase()) {
-                        case "yesforall" -> {
-                            replacePolicy = 1;
+                        case "y", "yes" -> {
+                            replaceFiles = 1;
                         }
-                        case "noforall" -> {
-                            replacePolicy = -1;
+                        case "n", "no" -> {
+                            replaceFiles = -1;
                         }
                         case "ask" -> {
-                            replacePolicy = 0;
+                            replaceFiles = 0;
                         }
                         default -> {
-                            out.println("Unknown replace policy: " + nextArgument);
+                            out.println("Unknown replace option: " + nextArgument);
                             return;
                         }
                     }
@@ -195,9 +195,9 @@ public class ExtractCommand {
         }
 
         String partOneFileName = partOne.getFileName().toString().toLowerCase();
-        if (!decrypt && partOneFileName.endsWith(".bin.001")) {
+        if (!decrypt && (partOneFileName.endsWith(".bin.001") || partOneFileName.endsWith(".bin"))) {
             out.println("Is " + partOne.toString() + " encrypted?");
-            out.print("[Y/N]");
+            out.print("[Y/N:]");
             String output = scanner.nextLine();
             if (output != null && (output.equalsIgnoreCase("y") || output.equalsIgnoreCase("yes"))) {
                 decrypt = true;
@@ -210,7 +210,7 @@ public class ExtractCommand {
                     partOne,
                     outputDirectory,
                     verifyFiles, decrypt, zipInZip, auto, verbose,
-                    replacePolicy
+                    replaceFiles
             );
         } catch (IOException ex) {
             out.println("Operation failed!");
@@ -363,11 +363,12 @@ public class ExtractCommand {
             boolean zipInZip,
             boolean auto,
             boolean verbose,
-            int replacePolicy
+            int replaceFiles
     ) throws IOException, InterruptedException {
         Charset charset;
         try {
             charset = Charset.forName("ibm-850");
+            //and hope it works
         } catch (IllegalCharsetNameException | UnsupportedCharsetException ex) {
             charset = Charset.defaultCharset();
         }
@@ -396,7 +397,7 @@ public class ExtractCommand {
             in = zip;
 
             ZipExtractor extractor = new ZipExtractor(zip, outputDirectory) {
-                private int replaceAll = replacePolicy;
+                private int replaceAll = replaceFiles;
 
                 @Override
                 protected void onFile(Path file, boolean directory, long expectedSize) {
@@ -463,6 +464,7 @@ public class ExtractCommand {
                     }
                 }
             };
+            
             ZipChecksumTester tester = null;
             if (verifyFiles) {
                 tester = new ZipChecksumTester() {
@@ -495,6 +497,7 @@ public class ExtractCommand {
                     }
                 };
             }
+            
             extractor.extract(tester);
         } finally {
             if (in != null) {

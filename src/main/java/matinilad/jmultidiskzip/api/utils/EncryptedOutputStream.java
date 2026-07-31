@@ -56,6 +56,7 @@ import javax.crypto.spec.SecretKeySpec;
 public class EncryptedOutputStream extends FilterOutputStream {
 
     public static final String MAGIC = "EncryptedStream1";
+    public static final int MAX_BUFFER_SIZE = 1 * 1024 * 1024 * 1024;
     
     private final byte[] userSalt;
     private final char[] password;
@@ -79,6 +80,9 @@ public class EncryptedOutputStream extends FilterOutputStream {
         if (bufferSize < 1) {
             throw new IllegalArgumentException("bufferSize < 1");
         }
+        if (bufferSize > MAX_BUFFER_SIZE) {
+            throw new IllegalArgumentException("bufferSize > MAX_BUFFER_SIZE");
+        }
         
         if (userSalt == null) {
             this.userSalt = null;
@@ -95,7 +99,7 @@ public class EncryptedOutputStream extends FilterOutputStream {
     }
     
     public EncryptedOutputStream(OutputStream out, byte[] userSalt, char[] password) {
-        this(out, 64 * 1024 * 1024, userSalt, password);
+        this(out, 64 * 1024, userSalt, password);
     }
     
     public EncryptedOutputStream(OutputStream out, char[] password) {

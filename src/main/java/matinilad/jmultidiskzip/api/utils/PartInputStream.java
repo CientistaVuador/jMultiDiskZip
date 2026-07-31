@@ -190,7 +190,7 @@ public class PartInputStream extends InputStream {
             } while (!Files.isReadable(partFile));
         }
         this.partStream = new BufferedInputStream(Files.newInputStream(partFile));
-
+        
         for (ChecksumAlgorithm hash : this.checksumFactory.getAlgorithms()) {
             for (int i = 0; i < hash.getNumberOfExtensions(); i++) {
                 Path hashFile = this.directory.resolve(this.name + partString + "." + hash.getExtension(i));

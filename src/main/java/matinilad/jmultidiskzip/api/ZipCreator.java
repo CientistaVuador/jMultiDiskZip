@@ -67,6 +67,10 @@ public class ZipCreator {
         this.hash = hash;
     }
 
+    public ChecksumAlgorithm getHash() {
+        return hash;
+    }
+    
     protected boolean onShouldInterrupt() {
         return Thread.interrupted();
     }
@@ -155,7 +159,7 @@ public class ZipCreator {
             entry.setLastModifiedTime(attributes.lastModifiedTime());
             entry.setLastAccessTime(attributes.lastAccessTime());
         } catch (UnsupportedOperationException ex) {
-            onFileError(file, new IOException("failed to get file timestamps", ex));
+            //ignored
         }
 
         if (isFile) {
