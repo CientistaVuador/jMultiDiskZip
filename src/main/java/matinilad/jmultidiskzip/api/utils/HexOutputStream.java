@@ -26,10 +26,70 @@
  */
 package matinilad.jmultidiskzip.api.utils;
 
+import java.io.FilterOutputStream;
+import java.io.IOException;
+import java.io.OutputStream;
+import java.util.Objects;
+
 /**
  *
  * @author Cien
  */
-public class HexOutputStream {
+public class HexOutputStream extends FilterOutputStream {
+    
+    private static final byte[] map = {
+        '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'A', 'B', 'C', 'D', 'E', 'F'
+    };
+    
+    private boolean closed = false;
+    private boolean header = false;
+    
+    public HexOutputStream(OutputStream out) {
+        super(Objects.requireNonNull(out, "out is null"));
+    }
+    
+    private void writeChecks() throws IOException {
+        if (this.closed) {
+            throw new IOException("stream is closed");
+        }
+        if (!this.header) {
+            this.out.write('0');
+            this.out.write('x');
+            this.header = true;
+        }
+    }
+    
+    @Override
+    public void write(int b) throws IOException {
+        writeChecks();
+        this.out.write(map[(b & 0xF0) >>> 4]);
+        this.out.write(map[(b & 0x0F) >>> 0]);
+    }
+    
+    @Override
+    public void write(byte[] b, int off, int len) throws IOException {
+        Objects.checkFromIndexSize(off, len, b.length);
+        writeChecks();
+        if (len == 0) {
+            return;
+        }
+        byte[] hex = new byte[len * 2];
+        for (int i = 0; i < len; i++) {
+            byte data = b[off + i];
+            hex[(i * 2) + 0] = map[(data & 0xF0) >>> 4];
+            hex[(i * 2) + 1] = map[(data & 0x0F) >>> 0];
+        }
+        this.out.write(hex, 0, hex.length);
+    }
+    
+    @Override
+    public void close() throws IOException {
+        if (this.closed) {
+            return;
+        }
+        writeChecks();
+        this.closed = true;
+        super.close();
+    }
     
 }

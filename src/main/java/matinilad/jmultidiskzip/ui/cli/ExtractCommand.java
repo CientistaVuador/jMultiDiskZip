@@ -35,11 +35,13 @@ import java.io.PrintStream;
 import java.io.PushbackInputStream;
 import java.nio.charset.Charset;
 import java.nio.charset.IllegalCharsetNameException;
+import java.nio.charset.StandardCharsets;
 import java.nio.charset.UnsupportedCharsetException;
 import java.nio.file.Files;
 import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
 import java.util.Arrays;
+import java.util.Base64;
 import java.util.HexFormat;
 import java.util.Scanner;
 import java.util.zip.ZipInputStream;
@@ -50,6 +52,7 @@ import matinilad.jmultidiskzip.api.checksum.ChecksumAlgorithm;
 import matinilad.jmultidiskzip.api.compression.CompressionAlgorithm;
 import matinilad.jmultidiskzip.api.compression.CompressionAlgorithmFactory;
 import matinilad.jmultidiskzip.api.utils.EncryptedInputStream;
+import matinilad.jmultidiskzip.api.utils.HexInputStream;
 import matinilad.jmultidiskzip.ui.ByteCountFormat;
 
 /**
@@ -194,16 +197,30 @@ public class ExtractCommand {
             return;
         }
 
-        String partOneFileName = partOne.getFileName().toString().toLowerCase();
-        if (!decrypt && (partOneFileName.endsWith(".bin.001") || partOneFileName.endsWith(".bin"))) {
-            out.println("Is " + partOne.toString() + " encrypted?");
-            out.print("[Y/N:]");
-            String output = scanner.nextLine();
-            if (output != null && (output.equalsIgnoreCase("y") || output.equalsIgnoreCase("yes"))) {
-                decrypt = true;
+        if (!decrypt) {
+            String partOneFileName = partOne.getFileName().toString().toLowerCase();
+            String[] encryptedExtensions = {
+                ".bin.001", ".bin",
+                ".bin.base64.001", ".bin.base64",
+                ".bin.hex.001", ".bin.hex"
+            };
+            boolean canBeEncrypted = false;
+            for (String ext : encryptedExtensions) {
+                canBeEncrypted = partOneFileName.endsWith(ext);
+                if (canBeEncrypted) {
+                    break;
+                }
+            }
+            if (canBeEncrypted) {
+                out.println("Is " + partOne.toString() + " encrypted?");
+                out.print("[Y/N:]");
+                String output = scanner.nextLine();
+                if (output != null && (output.equalsIgnoreCase("y") || output.equalsIgnoreCase("yes"))) {
+                    decrypt = true;
+                }
             }
         }
-
+        
         try {
             extract(scanner,
                     out,
@@ -268,6 +285,35 @@ public class ExtractCommand {
         return partStream;
     }
 
+    private static InputStream getFormatStream(InputStream in) throws IOException {
+        HexFormat hex = HexFormat.of();
+
+        byte[] magic = in.readNBytes(256);
+        String magicHex = hex.formatHex(magic);
+
+        PushbackInputStream pushback = new PushbackInputStream(in, magic.length);
+        pushback.unread(magic);
+
+        String base64Magic = hex.formatHex(CreateCommand.BASE64_HEADER.getBytes(StandardCharsets.US_ASCII));
+        String hexMagic0 = hex.formatHex("0x".getBytes(StandardCharsets.US_ASCII));
+        String hexMagic1 = hex.formatHex("0X".getBytes(StandardCharsets.US_ASCII));
+
+        if (magicHex.startsWith(base64Magic)) {
+            pushback.readNBytes(base64Magic.length() / 2);
+            return Base64.getDecoder().wrap(pushback);
+        } else if (magicHex.startsWith(hexMagic0) || magicHex.startsWith(hexMagic1)) {
+            try {
+                HexInputStream test = new HexInputStream(new ByteArrayInputStream(magic));
+                test.readAllBytes();
+            } catch (IOException ex) {
+                return pushback;
+            }
+            return new HexInputStream(pushback);
+        }
+
+        return pushback;
+    }
+
     private static ZipInputStream getZipInZip(InputStream in, Charset charset) throws IOException {
         ZipInputStream zip = new ZipInputStream(in, charset);
         if (zip.getNextEntry() == null) {
@@ -277,7 +323,7 @@ public class ExtractCommand {
     }
 
     private static EncryptedInputStream getDecryptedStream(PrintStream out, InputStream in) throws IOException {
-        byte[] sample = in.readNBytes(1024);
+        byte[] sample = in.readNBytes(256);
 
         Console console = System.console();
         if (console == null) {
@@ -372,7 +418,7 @@ public class ExtractCommand {
         } catch (IllegalCharsetNameException | UnsupportedCharsetException ex) {
             charset = Charset.defaultCharset();
         }
-        
+
         InputStream in = null;
         try {
             String name = partOne.getFileName().toString().toLowerCase();
@@ -381,6 +427,8 @@ public class ExtractCommand {
             } else {
                 in = new BufferedInputStream(Files.newInputStream(partOne));
             }
+
+            in = getFormatStream(in);
 
             if (zipInZip) {
                 in = getZipInZip(in, charset);
@@ -464,7 +512,7 @@ public class ExtractCommand {
                     }
                 }
             };
-            
+
             ZipChecksumTester tester = null;
             if (verifyFiles) {
                 tester = new ZipChecksumTester() {
@@ -497,7 +545,7 @@ public class ExtractCommand {
                     }
                 };
             }
-            
+
             extractor.extract(tester);
         } finally {
             if (in != null) {

@@ -37,6 +37,7 @@ import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Base64;
 import java.util.List;
 import java.util.Scanner;
 import java.util.zip.ZipOutputStream;
@@ -47,6 +48,7 @@ import matinilad.jmultidiskzip.api.checksum.ChecksumAlgorithmFactory;
 import matinilad.jmultidiskzip.api.compression.CompressionAlgorithm;
 import matinilad.jmultidiskzip.api.compression.CompressionAlgorithmFactory;
 import matinilad.jmultidiskzip.api.utils.EncryptedOutputStream;
+import matinilad.jmultidiskzip.api.utils.HexOutputStream;
 import matinilad.jmultidiskzip.ui.ByteCountFormat;
 
 /**
@@ -55,6 +57,8 @@ import matinilad.jmultidiskzip.ui.ByteCountFormat;
  */
 public class CreateCommand {
 
+    public static final String BASE64_HEADER = "data:application/octet-stream;base64,";
+    
     private static final String[] units = {
         "B",
         "KB", "MB", "GB",
@@ -117,7 +121,7 @@ public class CreateCommand {
         out.println("-encrypt - Encrypts the output with a password [NOT REQUIRED]");
         out.println("-verbose - Enables verbose output, otherwise only errors will be displayed [NOT REQUIRED]");
         out.println("-replaceFiles [yes/no/ask] - If the output file should be replaced if one already exists [DEFAULT IS ASK]");
-        out.println("-format [bin/hex/base64] - Sets the output format [DEFAULT IS BINARY]");
+        out.println("-format [binary/hex/base64] - Sets the output format [DEFAULT IS BINARY]");
     }
 
     public static void run(InputStream in, PrintStream out, String[] args) throws Exception {
@@ -142,8 +146,8 @@ public class CreateCommand {
         boolean encrypt = false;
         boolean verbose = false;
         int replaceFiles = 0;
-        String format = "bin";
-
+        String format = "binary";
+        
         for (int i = 0; i < args.length; i++) {
             String argument = args[i].toLowerCase();
             String nextArgument = null;
@@ -334,8 +338,21 @@ public class CreateCommand {
                     }
                 }
                 case "-format" -> {
-                    out.println("Error: -format to be implemented");
-                    return;
+                    switch (nextArgument.toLowerCase()) {
+                        case "bin", "binary" -> {
+                            format = "binary";
+                        }
+                        case "hex" -> {
+                            format = "hex";
+                        }
+                        case "base64" -> {
+                            format = "base64";
+                        }
+                        default -> {
+                            out.println("Unknown format option: "+nextArgument);
+                            return;
+                        }
+                    }
                 }
                 default -> {
                     out.println("Unknown argument: " + argument);
@@ -377,6 +394,16 @@ public class CreateCommand {
             } else {
                 filename += ".bin";
             }
+            if (!format.equals("binary")) {
+                switch (format) {
+                    case "hex" -> {
+                        filename += ".hex";
+                    }
+                    case "base64" -> {
+                        filename += ".base64";
+                    }
+                }
+            }
             filename += ".001";
         }
         outputFile = parent.resolve(filename);
@@ -398,7 +425,7 @@ public class CreateCommand {
         }
 
         try {
-            create(out, outputFile, partSize, partHash, fileHash, compression, compressionLevel, inputFiles, encrypt, verbose);
+            create(out, outputFile, partSize, partHash, fileHash, compression, compressionLevel, inputFiles, encrypt, verbose, format);
         } catch (IOException ex) {
             out.println("Operation failed!");
             ex.printStackTrace(out);
@@ -466,7 +493,8 @@ public class CreateCommand {
             CompressionAlgorithm compression, int compressionLevel,
             List<Path> inputFiles,
             boolean encrypt,
-            boolean verbose
+            boolean verbose,
+            String format
     ) throws IOException, InterruptedException {
         if (outputFile.getParent() != null) {
             Files.createDirectories(outputFile.getParent());
@@ -475,7 +503,19 @@ public class CreateCommand {
         OutputStream out = null;
         try {
             out = new PartOutputStream(outputFile, partSize, (encrypt ? null : partHash));
-
+            
+            if (!format.equals("binary")) {
+                switch (format) {
+                    case "base64" -> {
+                        out.write(BASE64_HEADER.getBytes(StandardCharsets.US_ASCII));
+                        out = Base64.getEncoder().wrap(out);
+                    }
+                    case "hex" -> {
+                        out = new HexOutputStream(out);
+                    }
+                }
+            }
+            
             if (encrypt) {
                 out = createEncryptedStream(log, out);
             }
