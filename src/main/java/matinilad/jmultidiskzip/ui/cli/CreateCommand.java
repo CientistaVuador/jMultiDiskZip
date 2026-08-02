@@ -505,6 +505,32 @@ public class CreateCommand {
         }
     }
 
+    private static void printFinalResultInformation(CountingOutputStream countIn, CountingOutputStream countOut, long partSize, PrintStream out) {
+        long dataIn = countIn.getCount();
+        long dataOut = countOut.getCount();
+
+        String dataInText = ByteCountFormat.format(dataIn);
+        String dataOutText = ByteCountFormat.format(dataOut);
+        String ratio = "0%";
+        if (dataIn != 0) {
+            ratio = String.format("%.2f", (dataOut / ((double) dataIn)) * 100.0) + "%";
+        }
+
+        long parts = dataOut / partSize;
+        long remainder = dataOut - (parts * partSize);
+
+        out.println("Total (input): " + dataInText);
+        out.println("Total (output): " + dataOutText);
+        out.println("Ratio: " + ratio);
+        if (parts != 0) {
+            out.print(parts + (parts == 1 ? " Part" : " Parts") + " of " + ByteCountFormat.format(partSize));
+            if (remainder != 0) {
+                out.print(" + ");
+            }
+        }
+        out.println("1 Part of " + ByteCountFormat.format(remainder));
+    }
+
     private static void create(
             PrintStream log,
             Path outputFile,
@@ -550,19 +576,32 @@ public class CreateCommand {
             }
 
             if (noZip) {
-                Path file = inputFiles.get(0);
+                try {
+                    countIn = new CountingOutputStream(out);
+                    out = countIn;
 
-                if (verbose) {
-                    long size = Files.size(file);
-                    log.println(file.toString() + " (" + ByteCountFormat.formatShort(size) + ")");
-                }
+                    Path file = inputFiles.get(0);
 
-                try (BufferedInputStream in = new BufferedInputStream(Files.newInputStream(file))) {
-                    byte[] buffer = new byte[1 * 1024 * 1024];
-                    int r;
-                    while ((r = in.read(buffer, 0, buffer.length)) != -1) {
-                        out.write(buffer, 0, r);
+                    if (verbose) {
+                        long size = Files.size(file);
+                        log.println(file.toString() + " (" + ByteCountFormat.formatShort(size) + ")");
                     }
+
+                    try (BufferedInputStream in = new BufferedInputStream(Files.newInputStream(file))) {
+                        byte[] buffer = new byte[1 * 1024 * 1024];
+                        int r;
+                        while ((r = in.read(buffer, 0, buffer.length)) != -1) {
+                            out.write(buffer, 0, r);
+                        }
+                    }
+                } finally {
+                    if (out != null) {
+                        out.close();
+                        out = null;
+                    }
+                }
+                if (verbose) {
+                    printFinalResultInformation(countIn, countOut, partSize, log);
                 }
                 return;
             }
@@ -621,32 +660,11 @@ public class CreateCommand {
         } finally {
             if (out != null) {
                 out.close();
+                out = null;
             }
         }
         if (verbose && countIn != null && countOut != null) {
-            long dataIn = countIn.getCount();
-            long dataOut = countOut.getCount();
-
-            String dataInText = ByteCountFormat.format(dataIn);
-            String dataOutText = ByteCountFormat.format(dataOut);
-            String ratio = "0%";
-            if (dataIn != 0) {
-                ratio = String.format("%.2f", (dataOut / ((double) dataIn)) * 100.0) + "%";
-            }
-
-            long parts = dataOut / partSize;
-            long remainder = dataOut - (parts * partSize);
-
-            log.println("Total (input): " + dataInText);
-            log.println("Total (output): " + dataOutText);
-            log.println("Ratio: " + ratio);
-            if (parts != 0) {
-                log.print(parts + (parts == 1 ? " Part" : " Parts") + " of " + ByteCountFormat.format(partSize));
-                if (remainder != 0) {
-                    log.print(" + ");
-                }
-            }
-            log.println("1 Part of "+ByteCountFormat.format(remainder));
+            printFinalResultInformation(countIn, countOut, partSize, log);
         }
     }
 

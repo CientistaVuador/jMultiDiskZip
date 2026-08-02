@@ -54,6 +54,7 @@ import matinilad.jmultidiskzip.api.checksum.ChecksumAlgorithm;
 import matinilad.jmultidiskzip.api.compression.CompressionAlgorithm;
 import matinilad.jmultidiskzip.api.compression.CompressionAlgorithmFactory;
 import matinilad.jmultidiskzip.api.utils.Base64File;
+import matinilad.jmultidiskzip.api.utils.CountingInputStream;
 import matinilad.jmultidiskzip.api.utils.EncryptedInputStream;
 import matinilad.jmultidiskzip.api.utils.EncryptedOutputStream;
 import matinilad.jmultidiskzip.api.utils.HexInputStream;
@@ -404,6 +405,22 @@ public class ExtractCommand {
         return pushBack;
     }
 
+    private static void printFinalResultInformation(CountingInputStream countIn, CountingInputStream countOut, PrintStream out) {
+        long dataIn = countIn.getCount();
+        long dataOut = countOut.getCount();
+
+        String dataInText = ByteCountFormat.format(dataIn);
+        String dataOutText = ByteCountFormat.format(dataOut);
+        String ratio = "0%";
+        if (dataOut != 0) {
+            ratio = String.format("%.2f", (dataIn / ((double) dataOut)) * 100.0) + "%";
+        }
+
+        out.println("Total (input): " + dataInText);
+        out.println("Total (output): " + dataOutText);
+        out.println("Ratio: " + ratio);
+    }
+
     private static void extract(
             Scanner scanner,
             PrintStream out,
@@ -425,6 +442,8 @@ public class ExtractCommand {
             charset = Charset.defaultCharset();
         }
 
+        CountingInputStream countIn = null;
+        CountingInputStream countOut = null;
         InputStream in = null;
         try {
             List<String> extensions = new ArrayList<>(Arrays.asList(partOne.getFileName().toString().split("\\.")));
@@ -436,6 +455,8 @@ public class ExtractCommand {
             } else {
                 in = new BufferedInputStream(Files.newInputStream(partOne));
             }
+            countIn = new CountingInputStream(in);
+            in = countIn;
 
             if (zipInZip) {
                 in = getZipInZip(in, charset, extensions);
@@ -450,48 +471,65 @@ public class ExtractCommand {
             in = getCompressedStream(in, extensions);
 
             if (noZip) {
-                String filename = name;
-                for (int i = 0; i < extensions.size(); i++) {
-                    filename += "." + extensions.get(i);
-                }
+                try {
+                    String filename = name;
+                    for (int i = 0; i < extensions.size(); i++) {
+                        filename += "." + extensions.get(i);
+                    }
 
-                Path outputFile = outputDirectory.resolve(filename);
+                    Path outputFile = outputDirectory.resolve(filename);
 
-                if (Files.exists(outputFile)) {
-                    if (replaceFiles == -1) {
-                        out.println(outputFile.toString() + " already exists!");
-                        return;
-                    } else if (replaceFiles == 0) {
-                        out.println("Replace " + outputFile.toString() + " ?");
-                        out.print("[Y/N:]");
-                        String response = scanner.nextLine();
-                        if (response == null || (!response.equalsIgnoreCase("y") && !response.equalsIgnoreCase("yes"))) {
-                            out.println("Canceled");
+                    if (Files.exists(outputFile)) {
+                        if (replaceFiles == -1) {
+                            out.println(outputFile.toString() + " already exists!");
                             return;
+                        } else if (replaceFiles == 0) {
+                            out.println("Replace " + outputFile.toString() + " ?");
+                            out.print("[Y/N:]");
+                            String response = scanner.nextLine();
+                            if (response == null || (!response.equalsIgnoreCase("y") && !response.equalsIgnoreCase("yes"))) {
+                                out.println("Canceled");
+                                return;
+                            }
                         }
                     }
-                }
-                
-                Files.createDirectories(outputDirectory);
-                
-                if (verbose) {
-                    out.println(outputFile.toString());
-                }
 
-                try (BufferedOutputStream o = new BufferedOutputStream(Files.newOutputStream(outputFile))) {
-                    byte[] buffer = new byte[1 * 1024 * 1024];
-                    int r;
-                    while ((r = in.read(buffer, 0, buffer.length)) != -1) {
-                        o.write(buffer, 0, r);
+                    Files.createDirectories(outputDirectory);
+
+                    if (verbose) {
+                        out.println(outputFile.toString());
                     }
+                    
+                    countOut = new CountingInputStream(in);
+                    in = countOut;
+                    
+                    try (BufferedOutputStream o = new BufferedOutputStream(Files.newOutputStream(outputFile))) {
+                        byte[] buffer = new byte[1 * 1024 * 1024];
+                        int r;
+                        while ((r = in.read(buffer, 0, buffer.length)) != -1) {
+                            o.write(buffer, 0, r);
+                        }
+                    }
+                } finally {
+                    if (in != null) {
+                        in.close();
+                        in = null;
+                    }
+                }
+                if (verbose) {
+                    printFinalResultInformation(countIn, countOut, out);
                 }
                 return;
             }
 
             in = getVerifiedZipFileStream(in);
 
-            ZipInputStream zip = new ZipInputStream(in, charset);
+            countOut = new CountingInputStream(in);
+            ZipInputStream zip = new ZipInputStream(countOut, charset);
             in = zip;
+
+            final CountingInputStream inCount = countIn;
+            final CountingInputStream outCount = countOut;
 
             ZipExtractor extractor = new ZipExtractor(zip, outputDirectory) {
                 private int replaceAll = replaceFiles;
@@ -502,7 +540,17 @@ public class ExtractCommand {
                         if (directory) {
                             out.println("Creating " + file.toString());
                         } else {
-                            out.println("Extracting " + file.toString() + " (" + ByteCountFormat.formatShort(expectedSize) + ")");
+                            long dataIn = inCount.getCount();
+                            long dataOut = outCount.getCount();
+
+                            String dataInText = ByteCountFormat.formatShort(dataIn);
+                            String dataOutText = ByteCountFormat.formatShort(dataOut);
+                            String ratio = "0%";
+                            if (dataOut != 0) {
+                                ratio = String.format("%.2f", (dataIn / ((double) dataOut)) * 100.0) + "%";
+                            }
+
+                            out.println("(" + dataInText + ">" + dataOutText + "; " + ratio + ") " + "Extracting " + file.toString() + " (" + ByteCountFormat.formatShort(expectedSize) + ")");
                         }
                     }
                 }
@@ -599,7 +647,11 @@ public class ExtractCommand {
         } finally {
             if (in != null) {
                 in.close();
+                in = null;
             }
+        }
+        if (verbose && countIn != null && countOut != null) {
+            printFinalResultInformation(countIn, countOut, out);
         }
     }
 
