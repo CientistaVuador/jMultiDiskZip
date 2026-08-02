@@ -41,7 +41,33 @@ import matinilad.jmultidiskzip.api.checksum.ChecksumAlgorithm;
  * @author Cien
  */
 public class PartOutputStream extends OutputStream {
-
+    
+    public static final String EXTENSION = "001";
+    
+    public static final int getPartNumber(Path file) {
+        if (file == null) {
+            return -1;
+        }
+        Path filenamePath = file.getFileName();
+        if (filenamePath == null) {
+            return -1;
+        }
+        String[] extensions = filenamePath.toString().split("\\.");
+        if (extensions.length <= 1) {
+            return -1;
+        }
+        String last = extensions[extensions.length - 1];
+        try {
+            int result = Integer.parseInt(last);
+            if (result < 0) {
+                return -1;
+            }
+            return result;
+        } catch (NumberFormatException ex) {
+            return -1;
+        }
+    }
+    
     private final Path directory;
     private final String name;
     private final int leadingZeros;

@@ -26,6 +26,7 @@
  */
 package matinilad.jmultidiskzip.ui.cli;
 
+import java.io.BufferedInputStream;
 import java.io.Console;
 import java.io.IOException;
 import java.io.InputStream;
@@ -37,7 +38,6 @@ import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Base64;
 import java.util.List;
 import java.util.Scanner;
 import java.util.zip.ZipOutputStream;
@@ -47,6 +47,8 @@ import matinilad.jmultidiskzip.api.checksum.ChecksumAlgorithm;
 import matinilad.jmultidiskzip.api.checksum.ChecksumAlgorithmFactory;
 import matinilad.jmultidiskzip.api.compression.CompressionAlgorithm;
 import matinilad.jmultidiskzip.api.compression.CompressionAlgorithmFactory;
+import matinilad.jmultidiskzip.api.utils.Base64File;
+import matinilad.jmultidiskzip.api.utils.CountingOutputStream;
 import matinilad.jmultidiskzip.api.utils.EncryptedOutputStream;
 import matinilad.jmultidiskzip.api.utils.HexOutputStream;
 import matinilad.jmultidiskzip.ui.ByteCountFormat;
@@ -57,8 +59,6 @@ import matinilad.jmultidiskzip.ui.ByteCountFormat;
  */
 public class CreateCommand {
 
-    public static final String BASE64_HEADER = "data:application/octet-stream;base64,";
-    
     private static final String[] units = {
         "B",
         "KB", "MB", "GB",
@@ -122,6 +122,7 @@ public class CreateCommand {
         out.println("-verbose - Enables verbose output, otherwise only errors will be displayed [NOT REQUIRED]");
         out.println("-replaceFiles [yes/no/ask] - If the output file should be replaced if one already exists [DEFAULT IS ASK]");
         out.println("-format [binary/hex/base64] - Sets the output format [DEFAULT IS BINARY]");
+        out.println("-noZip - Passthrough mode, only compression and encryption is applied to a single file input [NOT REQUIRED]");
     }
 
     public static void run(InputStream in, PrintStream out, String[] args) throws Exception {
@@ -147,7 +148,8 @@ public class CreateCommand {
         boolean verbose = false;
         int replaceFiles = 0;
         String format = "binary";
-        
+        boolean noZip = false;
+
         for (int i = 0; i < args.length; i++) {
             String argument = args[i].toLowerCase();
             String nextArgument = null;
@@ -162,6 +164,10 @@ public class CreateCommand {
                 }
                 case "-verbose" -> {
                     verbose = true;
+                    continue;
+                }
+                case "-nozip" -> {
+                    noZip = true;
                     continue;
                 }
             }
@@ -349,7 +355,7 @@ public class CreateCommand {
                             format = "base64";
                         }
                         default -> {
-                            out.println("Unknown format option: "+nextArgument);
+                            out.println("Unknown format option: " + nextArgument);
                             return;
                         }
                     }
@@ -372,39 +378,42 @@ public class CreateCommand {
             return;
         }
 
-        outputFile = outputFile.toAbsolutePath();
+        outputFile = outputFile.toAbsolutePath().normalize();
+
         Path parent = outputFile.getParent();
         if (parent == null) {
             out.println("Output file has no parent!");
             return;
         }
         Path nameFile = outputFile.getFileName();
-        if (nameFile == null) {
+        if (nameFile == null || nameFile.toString().isEmpty()) {
             out.println("Output file has no name!");
             return;
         }
 
         String filename = nameFile.toString();
-        if (!filename.endsWith(".001")) {
+        if (PartOutputStream.getPartNumber(outputFile) != 1) {
             if (!encrypt) {
-                filename += ".zip";
+                if (!noZip) {
+                    filename += "." + ZipCreator.EXTENSION;
+                }
                 if (compression != null) {
                     filename += "." + compression.getExtension(0);
                 }
             } else {
-                filename += ".bin";
+                filename += "." + EncryptedOutputStream.EXTENSION;
             }
             if (!format.equals("binary")) {
                 switch (format) {
                     case "hex" -> {
-                        filename += ".hex";
+                        filename += "." + HexOutputStream.EXTENSION;
                     }
                     case "base64" -> {
-                        filename += ".base64";
+                        filename += "." + Base64File.EXTENSION;
                     }
                 }
             }
-            filename += ".001";
+            filename += "." + PartOutputStream.EXTENSION;
         }
         outputFile = parent.resolve(filename);
 
@@ -424,8 +433,20 @@ public class CreateCommand {
             }
         }
 
+        if (noZip) {
+            if (inputFiles.size() != 1) {
+                out.println("-noZip Error: Only one input is required but found " + inputFiles.size() + " inputs");
+                return;
+            }
+            Path file = inputFiles.get(0);
+            if (!Files.isRegularFile(file)) {
+                out.println("-noZip Error: Not a regular file " + file.toString());
+                return;
+            }
+        }
+
         try {
-            create(out, outputFile, partSize, partHash, fileHash, compression, compressionLevel, inputFiles, encrypt, verbose, format);
+            create(out, outputFile, partSize, partHash, fileHash, compression, compressionLevel, inputFiles, encrypt, verbose, format, noZip);
         } catch (IOException ex) {
             out.println("Operation failed!");
             ex.printStackTrace(out);
@@ -494,28 +515,32 @@ public class CreateCommand {
             List<Path> inputFiles,
             boolean encrypt,
             boolean verbose,
-            String format
+            String format,
+            boolean noZip
     ) throws IOException, InterruptedException {
         if (outputFile.getParent() != null) {
             Files.createDirectories(outputFile.getParent());
         }
 
+        CountingOutputStream countIn = null;
+        CountingOutputStream countOut = null;
         OutputStream out = null;
         try {
-            out = new PartOutputStream(outputFile, partSize, (encrypt ? null : partHash));
-            
+            countOut = new CountingOutputStream(new PartOutputStream(outputFile, partSize, (encrypt ? null : partHash)));
+            out = countOut;
+
             if (!format.equals("binary")) {
                 switch (format) {
                     case "base64" -> {
-                        out.write(BASE64_HEADER.getBytes(StandardCharsets.US_ASCII));
-                        out = Base64.getEncoder().wrap(out);
+                        out.write(Base64File.HEADER.getBytes(StandardCharsets.US_ASCII));
+                        out = Base64File.encode(out);
                     }
                     case "hex" -> {
                         out = new HexOutputStream(out);
                     }
                 }
             }
-            
+
             if (encrypt) {
                 out = createEncryptedStream(log, out);
             }
@@ -524,9 +549,31 @@ public class CreateCommand {
                 out = compression.compress(out, compressionLevel);
             }
 
-            ZipOutputStream zipOut = new ZipOutputStream(out, StandardCharsets.UTF_8);
+            if (noZip) {
+                Path file = inputFiles.get(0);
+
+                if (verbose) {
+                    long size = Files.size(file);
+                    log.println(file.toString() + " (" + ByteCountFormat.formatShort(size) + ")");
+                }
+
+                try (BufferedInputStream in = new BufferedInputStream(Files.newInputStream(file))) {
+                    byte[] buffer = new byte[1 * 1024 * 1024];
+                    int r;
+                    while ((r = in.read(buffer, 0, buffer.length)) != -1) {
+                        out.write(buffer, 0, r);
+                    }
+                }
+                return;
+            }
+
+            countIn = new CountingOutputStream(out);
+            ZipOutputStream zipOut = new ZipOutputStream(countIn, StandardCharsets.UTF_8);
             out = zipOut;
-            
+
+            final CountingOutputStream inCount = countIn;
+            final CountingOutputStream outCount = countOut;
+
             ZipCreator writer = new ZipCreator(zipOut, inputFiles.toArray(Path[]::new), fileHash) {
                 @Override
                 protected void onFile(Path file) {
@@ -538,15 +585,26 @@ public class CreateCommand {
                 @Override
                 protected void onFileProgress(Path file, boolean crc, long currentBytes, long totalBytes) {
                     if (verbose && currentBytes == 0) {
-                        String sizeFormatted = "(" + ByteCountFormat.formatShort(totalBytes) + ")";
                         if (crc) {
-                            String crcName = "(Reading CRC32";
+                            String sizeFormatted = "(" + ByteCountFormat.formatShort(totalBytes) + ")";
+
+                            long dataIn = inCount.getCount();
+                            long dataOut = outCount.getCount();
+
+                            String dataInText = ByteCountFormat.formatShort(dataIn);
+                            String dataOutText = ByteCountFormat.formatShort(dataOut);
+                            String ratio = "0%";
+                            if (dataIn != 0) {
+                                ratio = String.format("%.2f", (dataOut / ((double) dataIn)) * 100.0) + "%";
+                            }
+
+                            String crcName = "(CRC32";
                             if (getHash() != null) {
                                 crcName += "/" + getHash().getName();
                             }
                             crcName += ")";
-                            
-                            log.print(file.toString() + " " + sizeFormatted + " " + crcName);
+
+                            log.print("(" + dataInText + ">" + dataOutText + "; " + ratio + ") " + file.toString() + " " + sizeFormatted + " " + crcName);
                         } else {
                             log.println(" (Writing)");
                         }
@@ -564,6 +622,31 @@ public class CreateCommand {
             if (out != null) {
                 out.close();
             }
+        }
+        if (verbose && countIn != null && countOut != null) {
+            long dataIn = countIn.getCount();
+            long dataOut = countOut.getCount();
+
+            String dataInText = ByteCountFormat.format(dataIn);
+            String dataOutText = ByteCountFormat.format(dataOut);
+            String ratio = "0%";
+            if (dataIn != 0) {
+                ratio = String.format("%.2f", (dataOut / ((double) dataIn)) * 100.0) + "%";
+            }
+
+            long parts = dataOut / partSize;
+            long remainder = dataOut - (parts * partSize);
+
+            log.println("Total (input): " + dataInText);
+            log.println("Total (output): " + dataOutText);
+            log.println("Ratio: " + ratio);
+            if (parts != 0) {
+                log.print(parts + (parts == 1 ? " Part" : " Parts") + " of " + ByteCountFormat.format(partSize));
+                if (remainder != 0) {
+                    log.print(" + ");
+                }
+            }
+            log.println("1 Part of "+ByteCountFormat.format(remainder));
         }
     }
 

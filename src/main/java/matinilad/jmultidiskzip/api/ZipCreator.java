@@ -50,12 +50,30 @@ import matinilad.jmultidiskzip.api.checksum.ChecksumAlgorithm;
  */
 public class ZipCreator {
 
-    public static final String CHECKSUMS_ZIP_FILENAME = "jMultiDiskZip_checksums.zip.gz";
+    public static final String EXTENSION = "zip";
+
+    private static final String[] zipMagic = {
+        "504B0304".toLowerCase(),
+        "504B0506".toLowerCase(),
+        "504B0708".toLowerCase()
+    };
     
+    public static boolean isZipFile(String sampleHex) {
+        sampleHex = sampleHex.toLowerCase();
+        for (String magic:zipMagic) {
+            if (sampleHex.startsWith(magic)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    public static final String CHECKSUMS_ZIP_FILENAME = "jMultiDiskZip_checksums.zip.gz";
+
     private final ZipOutputStream output;
     private final ArchivePathStream pathStream;
     private final ChecksumAlgorithm hash;
-    
+
     private Checksum digest = null;
     private CRC32 crc = null;
     private ByteArrayOutputStream checksumsStream = null;
@@ -70,21 +88,21 @@ public class ZipCreator {
     public ChecksumAlgorithm getHash() {
         return hash;
     }
-    
+
     protected boolean onShouldInterrupt() {
         return Thread.interrupted();
     }
-    
+
     protected void onFile(Path file) {
-        
+
     }
 
     protected void onFileProgress(Path file, boolean crc, long currentBytes, long totalBytes) {
-        
+
     }
 
     protected void onFileError(Path file, IOException reason) {
-        
+
     }
 
     private void init() throws IOException {
@@ -165,7 +183,7 @@ public class ZipCreator {
         if (isFile) {
             long fileSize = Files.size(file);
             long count = 0;
-            
+
             this.crc.reset();
             if (this.digest != null) {
                 this.digest.reset();
@@ -180,14 +198,14 @@ public class ZipCreator {
                         if (onShouldInterrupt()) {
                             throw new InterruptedException();
                         }
-                        
+
                         count += r;
-                        
+
                         this.crc.update(buffer, 0, r);
                         if (this.digest != null) {
                             this.digest.update(buffer, 0, r);
                         }
-                        
+
                         onFileProgress(file, true, count, fileSize);
                     }
                 }
@@ -208,28 +226,28 @@ public class ZipCreator {
         }
 
         this.output.putNextEntry(entry);
-        
+
         if (isFile) {
             long fileSize = Files.size(file);
             long progress = 0;
-            
+
             onFileProgress(file, false, progress, fileSize);
             try (InputStream in = Files.newInputStream(file)) {
-                byte[] buffer = new byte[16384];
+                byte[] buffer = new byte[1 * 1024 * 1024];
                 int r;
                 while ((r = in.read(buffer, 0, buffer.length)) != -1) {
                     if (onShouldInterrupt()) {
                         throw new InterruptedException();
                     }
-                    
+
                     this.output.write(buffer, 0, r);
                     progress += r;
-                    
+
                     onFileProgress(file, false, progress, fileSize);
                 }
             }
         }
-        
+
         this.output.closeEntry();
 
         if (this.hash != null) {
@@ -240,9 +258,9 @@ public class ZipCreator {
                 this.crc.reset();
                 this.crc.update(hashHexBytes, 0, hashHexBytes.length);
                 long crcValue = this.crc.getValue();
-                
+
                 ZipEntry hashEntry = new ZipEntry(entryName + "." + this.hash.getExtension(0));
-                
+
                 hashEntry.setMethod(ZipEntry.STORED);
 
                 hashEntry.setCompressedSize(hashHexBytes.length);
@@ -306,14 +324,14 @@ public class ZipCreator {
                     if (onShouldInterrupt()) {
                         throw new InterruptedException();
                     }
-                    
+
                     onFile(e.getPath());
-                    
+
                     if (e.getError() != null) {
                         onFileError(e.getPath(), e.getError());
                         return;
                     }
-                    
+
                     try {
                         writeToZip(e.getRoot(), e.getPath());
                     } catch (IOException ex) {

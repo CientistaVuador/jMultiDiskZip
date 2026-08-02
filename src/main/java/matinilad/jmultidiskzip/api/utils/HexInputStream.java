@@ -59,7 +59,7 @@ public class HexInputStream extends FilterInputStream {
 
     private final int[] pushback = new int[2];
     private boolean hasPushback = false;
-    
+
     public HexInputStream(InputStream in) {
         super(Objects.requireNonNull(in, "in is null"));
     }
@@ -75,7 +75,7 @@ public class HexInputStream extends FilterInputStream {
                 this.header = true;
                 return;
             }
-            
+
             int b1 = this.in.read();
             if (b1 == -1) {
                 throw new EOFException("unexpected eof, expected 0x");
@@ -95,26 +95,26 @@ public class HexInputStream extends FilterInputStream {
             int b0 = map[this.pushback[0]];
             int b1 = map[this.pushback[1]];
             if (b0 == -1) {
-                throw new IOException("unknown character "+this.pushback[0]);
+                throw new IOException("unknown character " + this.pushback[0]);
             }
             if (b1 == -1) {
-                throw new IOException("unknown character "+this.pushback[1]);
+                throw new IOException("unknown character " + this.pushback[1]);
             }
             this.hasPushback = false;
             return (b0 << 4) | (b1 << 0);
         }
         return -1;
     }
-    
+
     @Override
     public int read() throws IOException {
         readChecks();
-        
+
         int push = processPushback();
         if (push != -1) {
             return push;
         }
-        
+
         int b0 = this.in.read();
         if (b0 == -1) {
             return -1;
@@ -123,19 +123,19 @@ public class HexInputStream extends FilterInputStream {
         if (b1 == -1) {
             throw new EOFException("unexpected eof, expected another byte");
         }
-        
+
         b0 = b0 & 0xFF;
         b1 = b1 & 0xFF;
-        
+
         int p0 = map[b0];
         if (p0 == -1) {
-            throw new IOException("unknown character "+b0);
+            throw new IOException("unknown character " + b0);
         }
         int p1 = map[b1];
         if (p1 == -1) {
-            throw new IOException("unknown character "+b1);
+            throw new IOException("unknown character " + b1);
         }
-        
+
         return (p0 << 4) | (p1 << 0);
     }
 
@@ -146,7 +146,7 @@ public class HexInputStream extends FilterInputStream {
             return 0;
         }
         readChecks();
-        
+
         int push = processPushback();
         if (push != -1) {
             b[off] = (byte) push;
@@ -156,7 +156,7 @@ public class HexInputStream extends FilterInputStream {
                 return 1;
             }
         }
-        
+
         byte[] readBuffer = new byte[len * 2];
         int readBufferLength = this.in.read(readBuffer);
         if (readBufferLength == -1) {
@@ -173,23 +173,23 @@ public class HexInputStream extends FilterInputStream {
             readBuffer[readBufferLength] = (byte) data;
             readBufferLength++;
         }
-        
+
         for (int i = 0; i < readBufferLength / 2; i++) {
             int b0 = readBuffer[(i * 2) + 0] & 0xFF;
             int b1 = readBuffer[(i * 2) + 1] & 0xFF;
-            
+
             int p0 = map[b0];
             int p1 = map[b1];
             if (p0 == -1) {
-                throw new IOException("unknown character "+b0);
+                throw new IOException("unknown character " + b0);
             }
             if (p1 == -1) {
-                throw new IOException("unknown character "+b1);
+                throw new IOException("unknown character " + b1);
             }
-            
+
             b[off + i] = (byte) ((p0 << 4) | (p1 << 0));
         }
-        
+
         return (readBufferLength / 2) + (push == -1 ? 0 : 1);
     }
 

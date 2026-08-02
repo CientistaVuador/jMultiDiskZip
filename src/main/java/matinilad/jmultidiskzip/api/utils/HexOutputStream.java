@@ -26,9 +26,11 @@
  */
 package matinilad.jmultidiskzip.api.utils;
 
+import java.io.ByteArrayInputStream;
 import java.io.FilterOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
+import java.util.HexFormat;
 import java.util.Objects;
 
 /**
@@ -36,6 +38,39 @@ import java.util.Objects;
  * @author Cien
  */
 public class HexOutputStream extends FilterOutputStream {
+    
+    public static final String EXTENSION = "hex";
+    
+    private static final String[] hexMagic = {
+        "3078".toLowerCase(),
+        "3058".toLowerCase()
+    };
+    
+    public static final boolean isHexFile(String sampleHex) {
+        sampleHex = sampleHex.toLowerCase();
+        
+        boolean maybe = false;
+        for (String magic:hexMagic) {
+            if (sampleHex.startsWith(magic)) {
+                maybe = true;
+                break;
+            }
+        }
+        
+        if (maybe) {
+            try {
+                byte[] data = HexFormat.of().parseHex(sampleHex);
+                try (HexInputStream in = new HexInputStream(new ByteArrayInputStream(data))) {
+                    in.readNBytes(((data.length - 2) / 2) * 2);
+                }
+                return true;
+            } catch (IOException ex) {
+                return false;
+            }
+        }
+        
+        return false;
+    }
     
     private static final byte[] map = {
         '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'A', 'B', 'C', 'D', 'E', 'F'

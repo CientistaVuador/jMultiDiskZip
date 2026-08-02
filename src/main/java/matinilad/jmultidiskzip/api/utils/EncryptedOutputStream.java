@@ -54,7 +54,9 @@ import javax.crypto.spec.SecretKeySpec;
  * @author Cien
  */
 public class EncryptedOutputStream extends FilterOutputStream {
-
+    
+    public static final String EXTENSION = "bin";
+    
     public static final String MAGIC = "EncryptedStream1";
     public static final int MAX_BUFFER_SIZE = 1 * 1024 * 1024 * 1024;
     

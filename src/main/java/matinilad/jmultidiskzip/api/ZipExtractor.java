@@ -214,7 +214,7 @@ public class ZipExtractor {
 
                 onFileProgress(entryPath, count, fileSize);
                 try (OutputStream out = Files.newOutputStream(entryPath)) {
-                    byte[] buffer = new byte[16384];
+                    byte[] buffer = new byte[1 * 1024 * 1024];
                     int r;
                     while ((r = this.input.read(buffer, 0, buffer.length)) != -1) {
                         if (onShouldInterrupt()) {
