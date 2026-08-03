@@ -60,7 +60,7 @@ import matinilad.jmultidiskzip.api.utils.EncryptedOutputStream;
 import matinilad.jmultidiskzip.api.utils.HexInputStream;
 import matinilad.jmultidiskzip.api.utils.HexOutputStream;
 import matinilad.jmultidiskzip.api.utils.PartOutputStream;
-import matinilad.jmultidiskzip.ui.ByteCountFormat;
+import matinilad.jmultidiskzip.ui.UIUtils;
 
 /**
  *
@@ -78,7 +78,7 @@ public class ExtractCommand {
         out.println("-auto - Enables automatic mode, checks the part directory every few seconds instead of asking for a directory [NOT REQUIRED]");
         out.println("-verbose - Enables verbose output mode, otherwise only errors will be displayed [NOT REQUIRED]");
         out.println("-replaceFiles [yes/no/ask] - If files should be replaced or not [DEFAULT IS ASK]");
-        out.println("-noZip - Passthrough mode, only decompression and decryption is applied [NOT REQUIRED]");
+        out.println("-noZip - No zip archives, passthrough only [NOT REQUIRED]");
     }
 
     public static void run(InputStream in, PrintStream out, String[] args) throws Exception {
@@ -409,8 +409,8 @@ public class ExtractCommand {
         long dataIn = countIn.getCount();
         long dataOut = countOut.getCount();
 
-        String dataInText = ByteCountFormat.format(dataIn);
-        String dataOutText = ByteCountFormat.format(dataOut);
+        String dataInText = UIUtils.formatBytes(dataIn);
+        String dataOutText = UIUtils.formatBytes(dataOut);
         String ratio = "0%";
         if (dataOut != 0) {
             ratio = String.format("%.2f", (dataIn / ((double) dataOut)) * 100.0) + "%";
@@ -543,14 +543,14 @@ public class ExtractCommand {
                             long dataIn = inCount.getCount();
                             long dataOut = outCount.getCount();
 
-                            String dataInText = ByteCountFormat.formatShort(dataIn);
-                            String dataOutText = ByteCountFormat.formatShort(dataOut);
+                            String dataInText = UIUtils.formatBytesShort(dataIn);
+                            String dataOutText = UIUtils.formatBytesShort(dataOut);
                             String ratio = "0%";
                             if (dataOut != 0) {
                                 ratio = String.format("%.2f", (dataIn / ((double) dataOut)) * 100.0) + "%";
                             }
 
-                            out.println("(" + dataInText + ">" + dataOutText + "; " + ratio + ") " + "Extracting " + file.toString() + " (" + ByteCountFormat.formatShort(expectedSize) + ")");
+                            out.println("(" + dataInText + ">" + dataOutText + "; " + ratio + ") " + "Extracting " + file.toString() + " (" + UIUtils.formatBytesShort(expectedSize) + ")");
                         }
                     }
                 }
@@ -578,9 +578,9 @@ public class ExtractCommand {
                     }
 
                     out.println("Replace");
-                    out.println(file + " -- " + ByteCountFormat.format(size));
+                    out.println(file + " -- " + UIUtils.formatBytes(size));
                     out.println("With");
-                    out.println(file + " -- " + ByteCountFormat.format(expectedSize));
+                    out.println(file + " -- " + UIUtils.formatBytes(expectedSize));
                     out.println("?");
 
                     while (true) {
@@ -625,7 +625,7 @@ public class ExtractCommand {
                                 } catch (IOException ex) {
                                     //ignored
                                 }
-                                String text = "Verifying " + file.toString() + " (" + ByteCountFormat.formatShort(size) + ")";
+                                String text = "Verifying " + file.toString() + " (" + UIUtils.formatBytesShort(size) + ")";
                                 if (algorithm != null) {
                                     out.println("(" + algorithm.getName() + ") " + text);
                                 } else {

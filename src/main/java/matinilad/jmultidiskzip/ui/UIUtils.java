@@ -26,11 +26,15 @@
  */
 package matinilad.jmultidiskzip.ui;
 
+import java.io.ByteArrayOutputStream;
+import java.io.PrintStream;
+import java.nio.charset.StandardCharsets;
+
 /**
  *
  * @author Cien
  */
-public class ByteCountFormat {
+public class UIUtils {
     
     public static final long BYTE = 1;
     public static final long KIBIBYTE = BYTE * 1024;
@@ -47,7 +51,7 @@ public class ByteCountFormat {
     private static final long[] sizes = {BYTE, KIBIBYTE, MEBIBYTE, GIBIBYTE, TEBIBYTE};
     private static final String[] suffixes = {BYTE_SUFFIX, KIBIBYTE_SUFFIX, MEBIBYTE_SUFFIX, GIBIBYTE_SUFFIX, TEBIBYTE_SUFFIX};
     
-    public static String format(long byteCount, boolean shortened) {
+    public static String formatBytes(long byteCount, boolean shortened) {
         int unit = 0;
         for (int i = (sizes.length - 1); i >= 0; i--) {
             if (Math.abs(byteCount) >= sizes[i]) {
@@ -62,11 +66,44 @@ public class ByteCountFormat {
         return String.format("%.2f", div) + " " + suffixes[unit] + (shortened ? "" : " (" + byteCount + " " + suffixes[0] + ")");
     }
     
-    public static String formatShort(long byteCount) {
-        return format(byteCount, true);
+    public static String formatBytesShort(long byteCount) {
+        return formatBytes(byteCount, true);
     }
     
-    public static String format(long byteCount) {
-        return format(byteCount, false);
+    public static String formatBytes(long byteCount) {
+        return formatBytes(byteCount, false);
+    }
+    
+    public static String formatCountdownSeconds(long seconds) {
+        long days = seconds / 86400;
+        seconds -= days * 86400;
+        
+        long hours = seconds / 3600;
+        seconds -= hours * 3600;
+        
+        long minutes = seconds / 60;
+        seconds -= minutes * 60;
+        
+        StringBuilder b = new StringBuilder();
+        if (days != 0) {
+            b.append(days).append("d ");
+        }
+        if (hours != 0) {
+            b.append(hours).append("h ");
+        }
+        if (minutes != 0) {
+            b.append(minutes).append("m ");
+        }
+        b.append(seconds).append("s");
+        
+        return b.toString();
+    }
+    
+    public static String stacktraceOf(Throwable t) {
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        try (PrintStream print = new PrintStream(out, false, StandardCharsets.UTF_8)) {
+            t.printStackTrace(print);
+        }
+        return out.toString(StandardCharsets.UTF_8);
     }
 }

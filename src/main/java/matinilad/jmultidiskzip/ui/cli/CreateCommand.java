@@ -51,7 +51,7 @@ import matinilad.jmultidiskzip.api.utils.Base64File;
 import matinilad.jmultidiskzip.api.utils.CountingOutputStream;
 import matinilad.jmultidiskzip.api.utils.EncryptedOutputStream;
 import matinilad.jmultidiskzip.api.utils.HexOutputStream;
-import matinilad.jmultidiskzip.ui.ByteCountFormat;
+import matinilad.jmultidiskzip.ui.UIUtils;
 
 /**
  *
@@ -122,7 +122,7 @@ public class CreateCommand {
         out.println("-verbose - Enables verbose output, otherwise only errors will be displayed [NOT REQUIRED]");
         out.println("-replaceFiles [yes/no/ask] - If the output file should be replaced if one already exists [DEFAULT IS ASK]");
         out.println("-format [binary/hex/base64] - Sets the output format [DEFAULT IS BINARY]");
-        out.println("-noZip - Passthrough mode, only compression and encryption is applied to a single file input [NOT REQUIRED]");
+        out.println("-noZip - No zip archives, passthrough only, a single file input is required [NOT REQUIRED]");
     }
 
     public static void run(InputStream in, PrintStream out, String[] args) throws Exception {
@@ -509,8 +509,8 @@ public class CreateCommand {
         long dataIn = countIn.getCount();
         long dataOut = countOut.getCount();
 
-        String dataInText = ByteCountFormat.format(dataIn);
-        String dataOutText = ByteCountFormat.format(dataOut);
+        String dataInText = UIUtils.formatBytes(dataIn);
+        String dataOutText = UIUtils.formatBytes(dataOut);
         String ratio = "0%";
         if (dataIn != 0) {
             ratio = String.format("%.2f", (dataOut / ((double) dataIn)) * 100.0) + "%";
@@ -523,12 +523,14 @@ public class CreateCommand {
         out.println("Total (output): " + dataOutText);
         out.println("Ratio: " + ratio);
         if (parts != 0) {
-            out.print(parts + (parts == 1 ? " Part" : " Parts") + " of " + ByteCountFormat.format(partSize));
+            out.print(parts + (parts == 1 ? " Part" : " Parts") + " of " + UIUtils.formatBytes(partSize));
             if (remainder != 0) {
                 out.print(" + ");
             }
         }
-        out.println("1 Part of " + ByteCountFormat.format(remainder));
+        if (remainder != 0) {
+            out.println("1 Part of " + UIUtils.formatBytes(remainder));
+        }
     }
 
     private static void create(
@@ -584,7 +586,7 @@ public class CreateCommand {
 
                     if (verbose) {
                         long size = Files.size(file);
-                        log.println(file.toString() + " (" + ByteCountFormat.formatShort(size) + ")");
+                        log.println(file.toString() + " (" + UIUtils.formatBytesShort(size) + ")");
                     }
 
                     try (BufferedInputStream in = new BufferedInputStream(Files.newInputStream(file))) {
@@ -625,13 +627,13 @@ public class CreateCommand {
                 protected void onFileProgress(Path file, boolean crc, long currentBytes, long totalBytes) {
                     if (verbose && currentBytes == 0) {
                         if (crc) {
-                            String sizeFormatted = "(" + ByteCountFormat.formatShort(totalBytes) + ")";
+                            String sizeFormatted = "(" + UIUtils.formatBytesShort(totalBytes) + ")";
 
                             long dataIn = inCount.getCount();
                             long dataOut = outCount.getCount();
 
-                            String dataInText = ByteCountFormat.formatShort(dataIn);
-                            String dataOutText = ByteCountFormat.formatShort(dataOut);
+                            String dataInText = UIUtils.formatBytesShort(dataIn);
+                            String dataOutText = UIUtils.formatBytesShort(dataOut);
                             String ratio = "0%";
                             if (dataIn != 0) {
                                 ratio = String.format("%.2f", (dataOut / ((double) dataIn)) * 100.0) + "%";
