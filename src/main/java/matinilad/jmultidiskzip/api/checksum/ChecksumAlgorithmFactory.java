@@ -26,19 +26,86 @@
  */
 package matinilad.jmultidiskzip.api.checksum;
 
+import java.security.NoSuchAlgorithmException;
+import java.util.ArrayList;
+import java.util.List;
+
 /**
  *
  * @author Cien
  */
-public interface ChecksumAlgorithmFactory {
-    
+public class ChecksumAlgorithmFactory  {
+
+    private static final ChecksumAlgorithmFactory defaultInstance = new ChecksumAlgorithmFactory();
+
+    static {
+        try {
+            ChecksumAlgorithm[] defaults = {
+                new DefaultChecksumAlgorithm("SHA-256 (Secure) - 32 Bytes", "SHA-256", new String[]{"sha256"}),
+                new DefaultChecksumAlgorithm("SHA1 (Insecure) - 20 Bytes", "SHA-1", new String[] {"sha1"}),
+                new DefaultChecksumAlgorithm("MD5 (Fast, Insecure) - 16 Bytes", "MD5", new String[] {"md5"}),
+                new CRC32ChecksumAlgorithm()
+            };
+            for (ChecksumAlgorithm d : defaults) {
+                defaultInstance.addChecksumAlgorithm(d);
+            }
+        } catch (NoSuchAlgorithmException ex) {
+            throw new RuntimeException(ex);
+        }
+    }
+
     public static ChecksumAlgorithmFactory getDefault() {
-        return DefaultChecksumAlgorithmFactory.getDefault();
+        return defaultInstance;
+    }
+
+    private final List<ChecksumAlgorithm> algorithms = new ArrayList<>();
+
+    public ChecksumAlgorithmFactory() {
+
+    }
+
+    public boolean addChecksumAlgorithm(ChecksumAlgorithm algorithm) {
+        if (algorithm == null || this.algorithms.contains(algorithm)) {
+            return false;
+        }
+        return this.algorithms.add(algorithm);
+    }
+
+    public boolean removeChecksumAlgorithm(ChecksumAlgorithm algorithm) {
+        if (algorithm == null) {
+            return false;
+        }
+        return this.algorithms.remove(algorithm);
+    }
+
+    public ChecksumAlgorithm[] getAlgorithms() {
+        return this.algorithms.toArray(ChecksumAlgorithm[]::new);
+    }
+
+    public ChecksumAlgorithm fromName(String name) {
+        if (name == null) {
+            return null;
+        }
+        for (ChecksumAlgorithm a : this.algorithms) {
+            if (a.getName().equalsIgnoreCase(name)) {
+                return a;
+            }
+        }
+        return null;
     }
     
-    public ChecksumAlgorithm[] getAlgorithms();
-    
-    public ChecksumAlgorithm fromName(String name);
-    
-    public ChecksumAlgorithm fromExtension(String extension);
+    public ChecksumAlgorithm fromExtension(String extension) {
+        if (extension == null) {
+            return null;
+        }
+        for (ChecksumAlgorithm a : this.algorithms) {
+            for (int i = 0; i < a.getNumberOfExtensions(); i++) {
+                if (a.getExtension(i).equalsIgnoreCase(extension)) {
+                    return a;
+                }
+            }
+        }
+        return null;
+    }
+
 }

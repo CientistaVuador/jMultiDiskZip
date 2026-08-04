@@ -47,6 +47,7 @@ import java.util.zip.GZIPOutputStream;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 import java.util.zip.ZipOutputStream;
+import matinilad.jmultidiskzip.api.utils.TempFileList;
 
 /**
  *
@@ -73,7 +74,8 @@ public class ZipExtractor {
 
     private final ZipInputStream input;
     private final Path output;
-    
+    private final TempFileList createdFiles = new TempFileList();
+
     public ZipExtractor(ZipInputStream input, Path output) {
         this.input = Objects.requireNonNull(input, "input is null");
         this.output = Objects.requireNonNull(output, "output is null");
@@ -123,21 +125,15 @@ public class ZipExtractor {
             out.closeEntry();
         }
     }
-
+    
     public void extract(ZipChecksumTester tester) throws IOException, InterruptedException {
+        this.createdFiles.clearList();
+        this.createdFiles.createDirectories(this.output);
+
         ZipInputStream checksumsZip = null;
-        
+
         ByteArrayOutputStream fallbackChecksums = new ByteArrayOutputStream();
         ZipOutputStream fallbackChecksumsZip = new ZipOutputStream(new GZIPOutputStream(fallbackChecksums), StandardCharsets.UTF_8);
-        
-        if (!Files.exists(this.output)) {
-            Files.createDirectories(this.output);
-            if (!Files.isDirectory(this.output)) {
-                throw new IOException("failed to create output directory!");
-            }
-        } else if (!Files.isDirectory(this.output)) {
-            throw new IOException("output path is not a directory!");
-        }
 
         List<Runnable> directoryTimestamps = new ArrayList<>();
 
@@ -151,10 +147,10 @@ public class ZipExtractor {
                 checksumsZip = new ZipInputStream(new GZIPInputStream(new ByteArrayInputStream(this.input.readAllBytes())), StandardCharsets.UTF_8);
                 continue;
             }
-            
+
             final Path entryPath = this.output.resolve(getEntryPath(entry.getName()));
             onFile(entryPath, entry.isDirectory(), entry.getSize());
-            
+
             if (tester != null) {
                 addFallbackChecksum(fallbackChecksumsZip, entry);
             }
@@ -165,11 +161,10 @@ public class ZipExtractor {
             final FileTime access = Objects.requireNonNullElse(entry.getLastAccessTime(), fallback);
 
             if (entry.isDirectory()) {
-                if (!Files.exists(entryPath)) {
-                    Files.createDirectories(entryPath);
-                }
-                if (!Files.isDirectory(entryPath)) {
-                    onFileError(entryPath, new IOException("failed to create directory"));
+                try {
+                    this.createdFiles.createDirectories(entryPath);
+                } catch (IOException ex) {
+                    onFileError(entryPath, ex);
                     continue;
                 }
 
@@ -187,17 +182,13 @@ public class ZipExtractor {
                 continue;
             }
 
-            Path parent = entryPath.getParent();
-            if (parent != null) {
-                if (!Files.exists(parent)) {
-                    Files.createDirectories(parent);
-                }
-                if (!Files.isDirectory(parent)) {
-                    onFileError(entryPath, new IOException("failed to create parent directory"));
-                    continue;
-                }
+            try {
+                this.createdFiles.createDirectories(entryPath.getParent());
+            } catch (IOException ex) {
+                onFileError(entryPath, ex);
+                continue;
             }
-
+            
             if (Files.exists(entryPath)) {
                 if (Files.isDirectory(entryPath)) {
                     onFileError(entryPath, new IOException("path is a directory"));
@@ -213,7 +204,7 @@ public class ZipExtractor {
                 long count = 0;
 
                 onFileProgress(entryPath, count, fileSize);
-                try (OutputStream out = Files.newOutputStream(entryPath)) {
+                try (OutputStream out = this.createdFiles.newOutputStream(entryPath)) {
                     byte[] buffer = new byte[1 * 1024 * 1024];
                     int r;
                     while ((r = this.input.read(buffer, 0, buffer.length)) != -1) {
@@ -240,7 +231,7 @@ public class ZipExtractor {
         for (int i = (directoryTimestamps.size() - 1); i >= 0; i--) {
             directoryTimestamps.get(i).run();
         }
-        
+
         fallbackChecksumsZip.close();
         if (tester != null) {
             if (checksumsZip == null) {
@@ -248,6 +239,10 @@ public class ZipExtractor {
             }
             tester.test(this.output, checksumsZip);
         }
+    }
+    
+    public void deleteFiles() {
+        this.createdFiles.deleteFiles();
     }
 
 }

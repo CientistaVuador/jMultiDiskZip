@@ -41,9 +41,9 @@ import matinilad.jmultidiskzip.api.checksum.ChecksumAlgorithm;
  * @author Cien
  */
 public class PartOutputStream extends OutputStream {
-    
+
     public static final String EXTENSION = "001";
-    
+
     public static final int getPartNumber(Path file) {
         if (file == null) {
             return -1;
@@ -67,36 +67,39 @@ public class PartOutputStream extends OutputStream {
             return -1;
         }
     }
-    
+
     private final Path directory;
     private final String name;
     private final int leadingZeros;
-    
+
     private final long partSize;
     private final ChecksumAlgorithm hashAlgorithm;
     private final Checksum digest;
+    private final TempFileList createdFiles = new TempFileList();
     
     private OutputStream output = null;
     private long count = 0;
     private int partNumber = 0;
     private String partString = "";
-    
+
+    private boolean closed = false;
+
     public PartOutputStream(Path partOne, long partSize, ChecksumAlgorithm hashAlgorithm) {
         Object[] pathData = PartInputStream.splitPathData(partOne);
-        
+
         this.directory = (Path) pathData[0];
         this.name = (String) pathData[1];
         this.leadingZeros = (int) pathData[2];
-        
+
         int number = (int) pathData[3];
         if (number != 1) {
             throw new IllegalArgumentException("Part number must be 1! Found: " + number);
         }
-        
+
         if (partSize < 1) {
             throw new IllegalArgumentException("part size < 1");
         }
-        
+
         this.partSize = partSize;
         this.hashAlgorithm = hashAlgorithm;
 
@@ -118,8 +121,10 @@ public class PartOutputStream extends OutputStream {
             this.count = 0;
 
             if (this.digest != null) {
-                Path checksumFile = createFile(this.partString+"."+this.hashAlgorithm.getExtension(0));
+                Path checksumFile = createFile(this.partString + "." + this.hashAlgorithm.getExtension(0));
                 Files.writeString(checksumFile, HexFormat.of().formatHex(this.digest.digest()), StandardCharsets.UTF_8);
+                
+                this.createdFiles.addFile(checksumFile);
             }
         }
     }
@@ -131,17 +136,21 @@ public class PartOutputStream extends OutputStream {
 
         this.partString = Integer.toString(this.partNumber);
         this.partString = "." + "0".repeat(Math.max(this.leadingZeros - this.partString.length(), 0)) + this.partString;
-        this.output = new BufferedOutputStream(Files.newOutputStream(createFile(this.partString)));
+        
+        this.output = new BufferedOutputStream(this.createdFiles.newOutputStream(createFile(this.partString)));
     }
-    
+
     @Override
     public void write(int b) throws IOException {
+        if (this.closed) {
+            throw new IOException("stream is closed");
+        }
         if (this.output == null || this.count >= this.partSize) {
             nextPart();
         }
         this.output.write(b);
         this.count++;
-        
+
         if (this.digest != null) {
             this.digest.update((byte) b);
         }
@@ -149,6 +158,9 @@ public class PartOutputStream extends OutputStream {
 
     @Override
     public void write(byte[] b, int off, int len) throws IOException {
+        if (this.closed) {
+            throw new IOException("stream is closed");
+        }
         if (this.output == null) {
             nextPart();
         }
@@ -171,8 +183,26 @@ public class PartOutputStream extends OutputStream {
     }
 
     @Override
+    public void flush() throws IOException {
+        if (this.closed) {
+            throw new IOException("stream is closed");
+        }
+        if (this.output != null) {
+            this.output.flush();
+        }
+    }
+
+    public void deleteFiles() {
+        this.createdFiles.deleteFiles();
+    }
+
+    @Override
     public void close() throws IOException {
+        if (this.closed) {
+            return;
+        }
         closePart();
+        this.closed = true;
     }
 
 }

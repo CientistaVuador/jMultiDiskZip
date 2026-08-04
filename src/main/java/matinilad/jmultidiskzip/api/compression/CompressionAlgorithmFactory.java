@@ -26,21 +26,89 @@
  */
 package matinilad.jmultidiskzip.api.compression;
 
+import java.util.ArrayList;
+import java.util.List;
+
 /**
  *
  * @author Cien
  */
-public interface CompressionAlgorithmFactory {
+public class CompressionAlgorithmFactory {
     
-    public static CompressionAlgorithmFactory getDefault() {
-        return DefaultCompressionAlgorithmFactory.getDefault();
+    private static final CompressionAlgorithmFactory defaultInstance = new CompressionAlgorithmFactory();
+    
+    static {
+        defaultInstance.addCompressionAlgorithm(new GZIPCompressionAlgorithm());
+        defaultInstance.addCompressionAlgorithm(new XZCompressionAlgorithm());
     }
     
-    public CompressionAlgorithm[] getAlgorithms();
+    public static CompressionAlgorithmFactory getDefault() {
+        return defaultInstance;
+    }
     
-    public CompressionAlgorithm fromName(String name);
+    private final List<CompressionAlgorithm> algorithms = new ArrayList<>();
     
-    public CompressionAlgorithm fromExtension(String extension);
+    public CompressionAlgorithmFactory() {
+        
+    }
     
-    public CompressionAlgorithm fromMagicNumber(String magicNumber);
+    public boolean addCompressionAlgorithm(CompressionAlgorithm algorithm) {
+        if (algorithm == null || this.algorithms.contains(algorithm)) {
+            return false;
+        }
+        return this.algorithms.add(algorithm);
+    }
+
+    public boolean removeCompressionAlgorithm(CompressionAlgorithm algorithm) {
+        if (algorithm == null) {
+            return false;
+        }
+        return this.algorithms.remove(algorithm);
+    }
+    
+    public CompressionAlgorithm[] getAlgorithms() {
+        return this.algorithms.toArray(CompressionAlgorithm[]::new);
+    }
+
+    public CompressionAlgorithm fromName(String name) {
+        if (name == null) {
+            return null;
+        }
+        for (CompressionAlgorithm a : this.algorithms) {
+            if (a.getName().equalsIgnoreCase(name)) {
+                return a;
+            }
+        }
+        return null;
+    }
+
+    public CompressionAlgorithm fromExtension(String extension) {
+        if (extension == null) {
+            return null;
+        }
+        for (CompressionAlgorithm a : this.algorithms) {
+            for (int i = 0; i < a.getNumberOfExtensions(); i++) {
+                if (a.getExtension(i).equalsIgnoreCase(extension)) {
+                    return a;
+                }
+            }
+        }
+        return null;
+    }
+
+    public CompressionAlgorithm fromMagicNumber(String magicNumber) {
+        if (magicNumber == null) {
+            return null;
+        }
+        magicNumber = magicNumber.toLowerCase();
+        for (CompressionAlgorithm a:this.algorithms) {
+            for (int i = 0; i < a.getNumberOfMagicNumbers(); i++) {
+                if (magicNumber.startsWith(a.getMagicNumber(i).toLowerCase())) {
+                    return a;
+                }
+            }
+        }
+        return null;
+    }
+    
 }

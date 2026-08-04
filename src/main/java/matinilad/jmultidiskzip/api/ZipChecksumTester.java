@@ -47,14 +47,8 @@ import matinilad.jmultidiskzip.api.checksum.ChecksumAlgorithmFactory;
  */
 public class ZipChecksumTester {
 
-    private final ChecksumAlgorithmFactory checksumFactory;
-    
-    public ZipChecksumTester(ChecksumAlgorithmFactory checksumFactory) {
-        this.checksumFactory = checksumFactory;
-    }
-    
     public ZipChecksumTester() {
-        this(ChecksumAlgorithmFactory.getDefault());
+        
     }
 
     protected boolean onShouldInterrupt() {
@@ -101,7 +95,7 @@ public class ZipChecksumTester {
             String entryPathString = entryPath.toString();
             entryPath = Path.of(entryPathString.substring(0, entryPathString.length() - (lastExtension.length() + 1)));
             
-            ChecksumAlgorithm hashAlgorithm = this.checksumFactory.fromExtension(lastExtension);
+            ChecksumAlgorithm hashAlgorithm = ChecksumAlgorithmFactory.getDefault().fromExtension(lastExtension);
             
             onFile(entryPath, false, hashAlgorithm);
             if (hashAlgorithm == null) {

@@ -60,6 +60,7 @@ import matinilad.jmultidiskzip.api.utils.EncryptedOutputStream;
 import matinilad.jmultidiskzip.api.utils.HexInputStream;
 import matinilad.jmultidiskzip.api.utils.HexOutputStream;
 import matinilad.jmultidiskzip.api.utils.PartOutputStream;
+import matinilad.jmultidiskzip.api.utils.TempFileList;
 import matinilad.jmultidiskzip.ui.UIUtils;
 
 /**
@@ -209,6 +210,8 @@ public class ExtractCommand {
             out.println("A output directory is required, add with -out");
             return;
         }
+        
+        outputDirectory = outputDirectory.toAbsolutePath().normalize();
 
         if (!decrypt) {
             String[] extensions = partOne.getFileName().toString().split("\\.");
@@ -223,6 +226,11 @@ public class ExtractCommand {
                     break;
                 }
             }
+        }
+        
+        if (noZip && auto && !decrypt) {
+            out.println("auto mode cannot be combined with noZip without encryption");
+            return;
         }
 
         try {
@@ -242,7 +250,7 @@ public class ExtractCommand {
         }
     }
 
-    private static PartInputStream getPartStream(Scanner scanner, PrintStream out, Path partOne, boolean auto, List<String> extensions) {
+    private static PartInputStream getPartStream(Scanner scanner, PrintStream out, Path partOne, boolean auto, boolean allowClose, List<String> extensions) {
         extensions.remove(extensions.size() - 1);
         PartInputStream partStream = new PartInputStream(partOne) {
             private Path lastPart = null;
@@ -271,9 +279,16 @@ public class ExtractCommand {
                 Path path = null;
                 while (path == null) {
                     out.println("Please insert the directory for the next part: " + requiredPart.getFileName().toString());
-                    out.println("(Leave empty to use current part directory)");
+                    out.println("Leave empty to use current part directory");
+                    if (allowClose) {
+                        out.println("If no more parts are available, type //close to close the stream");
+                    }
                     out.print("[Directory:]");
                     String input = scanner.nextLine();
+                    if (allowClose && input.equalsIgnoreCase("//close")) {
+                        continueSignal(null, true);
+                        return;
+                    }
                     if (input.isEmpty()) {
                         continueSignal(null, false);
                         return;
@@ -434,224 +449,238 @@ public class ExtractCommand {
             int replaceFiles,
             boolean noZip
     ) throws IOException, InterruptedException {
-        Charset charset;
+        ZipExtractor extractor = null;
         try {
-            charset = Charset.forName("ibm-850");
-            //and hope it works
-        } catch (IllegalCharsetNameException | UnsupportedCharsetException ex) {
-            charset = Charset.defaultCharset();
-        }
-
-        CountingInputStream countIn = null;
-        CountingInputStream countOut = null;
-        InputStream in = null;
-        try {
-            List<String> extensions = new ArrayList<>(Arrays.asList(partOne.getFileName().toString().split("\\.")));
-            String name = extensions.get(0);
-            extensions.remove(0);
-
-            if (PartOutputStream.getPartNumber(partOne) != -1) {
-                in = getPartStream(scanner, out, partOne, auto, extensions);
-            } else {
-                in = new BufferedInputStream(Files.newInputStream(partOne));
-            }
-            countIn = new CountingInputStream(in);
-            in = countIn;
-
-            if (zipInZip) {
-                in = getZipInZip(in, charset, extensions);
+            Charset charset;
+            try {
+                charset = Charset.forName("ibm-850");
+                //and hope it works
+            } catch (IllegalCharsetNameException | UnsupportedCharsetException ex) {
+                charset = Charset.defaultCharset();
             }
 
-            in = getFormatStream(in, extensions);
+            CountingInputStream countIn = null;
+            CountingInputStream countOut = null;
+            InputStream in = null;
+            try {
+                List<String> extensions = new ArrayList<>(Arrays.asList(partOne.getFileName().toString().split("\\.")));
+                String name = extensions.get(0);
+                extensions.remove(0);
 
-            if (decrypt) {
-                in = getEncryptedStream(out, in, extensions);
-            }
-
-            in = getCompressedStream(in, extensions);
-
-            if (noZip) {
-                try {
-                    String filename = name;
-                    for (int i = 0; i < extensions.size(); i++) {
-                        filename += "." + extensions.get(i);
-                    }
-
-                    Path outputFile = outputDirectory.resolve(filename);
-
-                    if (Files.exists(outputFile)) {
-                        if (replaceFiles == -1) {
-                            out.println(outputFile.toString() + " already exists!");
-                            return;
-                        } else if (replaceFiles == 0) {
-                            out.println("Replace " + outputFile.toString() + " ?");
-                            out.print("[Y/N:]");
-                            String response = scanner.nextLine();
-                            if (response == null || (!response.equalsIgnoreCase("y") && !response.equalsIgnoreCase("yes"))) {
-                                out.println("Canceled");
-                                return;
-                            }
-                        }
-                    }
-
-                    Files.createDirectories(outputDirectory);
-
-                    if (verbose) {
-                        out.println(outputFile.toString());
-                    }
-                    
-                    countOut = new CountingInputStream(in);
-                    in = countOut;
-                    
-                    try (BufferedOutputStream o = new BufferedOutputStream(Files.newOutputStream(outputFile))) {
-                        byte[] buffer = new byte[1 * 1024 * 1024];
-                        int r;
-                        while ((r = in.read(buffer, 0, buffer.length)) != -1) {
-                            o.write(buffer, 0, r);
-                        }
-                    }
-                } finally {
-                    if (in != null) {
-                        in.close();
-                        in = null;
-                    }
+                if (PartOutputStream.getPartNumber(partOne) != -1) {
+                    in = getPartStream(scanner, out, partOne, auto, noZip && !decrypt, extensions);
+                } else {
+                    in = new BufferedInputStream(Files.newInputStream(partOne));
                 }
-                if (verbose) {
-                    printFinalResultInformation(countIn, countOut, out);
-                }
-                return;
-            }
+                countIn = new CountingInputStream(in);
+                in = countIn;
 
-            in = getVerifiedZipFileStream(in);
-
-            countOut = new CountingInputStream(in);
-            ZipInputStream zip = new ZipInputStream(countOut, charset);
-            in = zip;
-
-            final CountingInputStream inCount = countIn;
-            final CountingInputStream outCount = countOut;
-
-            ZipExtractor extractor = new ZipExtractor(zip, outputDirectory) {
-                private int replaceAll = replaceFiles;
-
-                @Override
-                protected void onFile(Path file, boolean directory, long expectedSize) {
-                    if (verbose) {
-                        if (directory) {
-                            out.println("Creating " + file.toString());
-                        } else {
-                            long dataIn = inCount.getCount();
-                            long dataOut = outCount.getCount();
-
-                            String dataInText = UIUtils.formatBytesShort(dataIn);
-                            String dataOutText = UIUtils.formatBytesShort(dataOut);
-                            String ratio = "0%";
-                            if (dataOut != 0) {
-                                ratio = String.format("%.2f", (dataIn / ((double) dataOut)) * 100.0) + "%";
-                            }
-
-                            out.println("(" + dataInText + ">" + dataOutText + "; " + ratio + ") " + "Extracting " + file.toString() + " (" + UIUtils.formatBytesShort(expectedSize) + ")");
-                        }
-                    }
+                if (zipInZip) {
+                    in = getZipInZip(in, charset, extensions);
                 }
 
-                @Override
-                protected void onFileError(Path file, IOException reason) {
-                    out.println("Error on: " + file.toString());
-                    reason.printStackTrace(out);
+                in = getFormatStream(in, extensions);
+
+                if (decrypt) {
+                    in = getEncryptedStream(out, in, extensions);
                 }
 
-                @Override
-                protected boolean onShouldReplaceFile(Path file, long expectedSize) {
-                    if (this.replaceAll == 1) {
-                        return true;
-                    }
-                    if (this.replaceAll == -1) {
-                        return false;
-                    }
+                in = getCompressedStream(in, extensions);
 
-                    long size = 0;
+                if (noZip) {
+                    TempFileList createdFiles = new TempFileList();
                     try {
-                        size = Files.size(file);
-                    } catch (IOException ex) {
-                        //ignored
-                    }
+                        try {
+                            String filename = name;
+                            for (int i = 0; i < extensions.size(); i++) {
+                                filename += "." + extensions.get(i);
+                            }
 
-                    out.println("Replace");
-                    out.println(file + " -- " + UIUtils.formatBytes(size));
-                    out.println("With");
-                    out.println(file + " -- " + UIUtils.formatBytes(expectedSize));
-                    out.println("?");
+                            Path outputFile = outputDirectory.resolve(filename);
 
-                    while (true) {
-                        out.print("[Y/N/YesForAll/NoForAll:]");
-                        String a = scanner.nextLine();
-                        if (a == null || a.isEmpty()) {
-                            continue;
+                            if (Files.exists(outputFile)) {
+                                if (replaceFiles == -1) {
+                                    out.println(outputFile.toString() + " already exists!");
+                                    return;
+                                } else if (replaceFiles == 0) {
+                                    out.println("Replace " + outputFile.toString() + " ?");
+                                    out.print("[Y/N:]");
+                                    String response = scanner.nextLine();
+                                    if (response == null || (!response.equalsIgnoreCase("y") && !response.equalsIgnoreCase("yes"))) {
+                                        out.println("Canceled");
+                                        return;
+                                    }
+                                }
+                            }
+
+                            createdFiles.createDirectories(outputDirectory);
+
+                            if (verbose) {
+                                out.println(outputFile.toString());
+                            }
+                            
+                            countOut = new CountingInputStream(in);
+                            in = countOut;
+
+                            try (BufferedOutputStream o = new BufferedOutputStream(createdFiles.newOutputStream(outputFile))) {
+                                byte[] buffer = new byte[1 * 1024 * 1024];
+                                int r;
+                                while ((r = in.read(buffer, 0, buffer.length)) != -1) {
+                                    o.write(buffer, 0, r);
+                                }
+                            }
+                        } finally {
+                            if (in != null) {
+                                in.close();
+                                in = null;
+                            }
                         }
-                        a = a.toLowerCase();
-                        switch (a) {
-                            case "y", "yes" -> {
-                                return true;
-                            }
-                            case "n", "no" -> {
-                                return false;
-                            }
-                            case "yesforall" -> {
-                                this.replaceAll = 1;
-                                return true;
-                            }
-                            case "noforall" -> {
-                                this.replaceAll = -1;
-                                return false;
-                            }
+                        if (verbose) {
+                            printFinalResultInformation(countIn, countOut, out);
                         }
+                    } catch (Throwable t) {
+                        createdFiles.deleteFiles();
+                        throw t;
                     }
+                    return;
                 }
-            };
 
-            ZipChecksumTester tester = null;
-            if (verifyFiles) {
-                tester = new ZipChecksumTester() {
+                in = getVerifiedZipFileStream(in);
+
+                countOut = new CountingInputStream(in);
+                ZipInputStream zip = new ZipInputStream(countOut, charset);
+                in = zip;
+
+                final CountingInputStream inCount = countIn;
+                final CountingInputStream outCount = countOut;
+
+                extractor = new ZipExtractor(zip, outputDirectory) {
+                    private int replaceAll = replaceFiles;
+
                     @Override
-                    protected void onFile(Path file, boolean directory, ChecksumAlgorithm algorithm) {
+                    protected void onFile(Path file, boolean directory, long expectedSize) {
                         if (verbose) {
                             if (directory) {
-                                out.println("Checking " + file.toString());
+                                out.println("Creating " + file.toString());
                             } else {
-                                long size = 0;
-                                try {
-                                    size = Files.size(file);
-                                } catch (IOException ex) {
-                                    //ignored
+                                long dataIn = inCount.getCount();
+                                long dataOut = outCount.getCount();
+
+                                String dataInText = UIUtils.formatBytesShort(dataIn);
+                                String dataOutText = UIUtils.formatBytesShort(dataOut);
+                                String ratio = "0%";
+                                if (dataOut != 0) {
+                                    ratio = String.format("%.2f", (dataIn / ((double) dataOut)) * 100.0) + "%";
                                 }
-                                String text = "Verifying " + file.toString() + " (" + UIUtils.formatBytesShort(size) + ")";
-                                if (algorithm != null) {
-                                    out.println("(" + algorithm.getName() + ") " + text);
-                                } else {
-                                    out.println(text);
-                                }
+
+                                out.println("(" + dataInText + ">" + dataOutText + "; " + ratio + ") " + "Extracting " + file.toString() + " (" + UIUtils.formatBytesShort(expectedSize) + ")");
                             }
                         }
                     }
 
                     @Override
                     protected void onFileError(Path file, IOException reason) {
-                        out.println("Failed " + file.toString());
+                        out.println("Error on: " + file.toString());
                         reason.printStackTrace(out);
                     }
-                };
-            }
 
-            extractor.extract(tester);
-        } finally {
-            if (in != null) {
-                in.close();
-                in = null;
+                    @Override
+                    protected boolean onShouldReplaceFile(Path file, long expectedSize) {
+                        if (this.replaceAll == 1) {
+                            return true;
+                        }
+                        if (this.replaceAll == -1) {
+                            return false;
+                        }
+
+                        long size = 0;
+                        try {
+                            size = Files.size(file);
+                        } catch (IOException ex) {
+                            //ignored
+                        }
+
+                        out.println("Replace");
+                        out.println(file + " -- " + UIUtils.formatBytes(size));
+                        out.println("With");
+                        out.println(file + " -- " + UIUtils.formatBytes(expectedSize));
+                        out.println("?");
+
+                        while (true) {
+                            out.print("[Y/N/YesForAll/NoForAll:]");
+                            String a = scanner.nextLine();
+                            if (a == null || a.isEmpty()) {
+                                continue;
+                            }
+                            a = a.toLowerCase();
+                            switch (a) {
+                                case "y", "yes" -> {
+                                    return true;
+                                }
+                                case "n", "no" -> {
+                                    return false;
+                                }
+                                case "yesforall" -> {
+                                    this.replaceAll = 1;
+                                    return true;
+                                }
+                                case "noforall" -> {
+                                    this.replaceAll = -1;
+                                    return false;
+                                }
+                            }
+                        }
+                    }
+                };
+
+                ZipChecksumTester tester = null;
+                if (verifyFiles) {
+                    tester = new ZipChecksumTester() {
+                        @Override
+                        protected void onFile(Path file, boolean directory, ChecksumAlgorithm algorithm) {
+                            if (verbose) {
+                                if (directory) {
+                                    out.println("Checking " + file.toString());
+                                } else {
+                                    long size = 0;
+                                    try {
+                                        size = Files.size(file);
+                                    } catch (IOException ex) {
+                                        //ignored
+                                    }
+                                    String text = "Verifying " + file.toString() + " (" + UIUtils.formatBytesShort(size) + ")";
+                                    if (algorithm != null) {
+                                        out.println("(" + algorithm.getName() + ") " + text);
+                                    } else {
+                                        out.println(text);
+                                    }
+                                }
+                            }
+                        }
+
+                        @Override
+                        protected void onFileError(Path file, IOException reason) {
+                            out.println("Failed " + file.toString());
+                            reason.printStackTrace(out);
+                        }
+                    };
+                }
+
+                extractor.extract(tester);
+            } finally {
+                if (in != null) {
+                    in.close();
+                    in = null;
+                }
             }
-        }
-        if (verbose && countIn != null && countOut != null) {
-            printFinalResultInformation(countIn, countOut, out);
+            if (verbose && countIn != null && countOut != null) {
+                printFinalResultInformation(countIn, countOut, out);
+            }
+        } catch (Throwable t) {
+            if (extractor != null) {
+                extractor.deleteFiles();
+            }
+            throw t;
         }
     }
 

@@ -546,127 +546,132 @@ public class CreateCommand {
             String format,
             boolean noZip
     ) throws IOException, InterruptedException {
-        if (outputFile.getParent() != null) {
-            Files.createDirectories(outputFile.getParent());
-        }
-
+        PartOutputStream partOut = null;
         CountingOutputStream countIn = null;
         CountingOutputStream countOut = null;
         OutputStream out = null;
         try {
-            countOut = new CountingOutputStream(new PartOutputStream(outputFile, partSize, (encrypt ? null : partHash)));
-            out = countOut;
+            try {
+                partOut = new PartOutputStream(outputFile, partSize, (encrypt ? null : partHash));
+                countOut = new CountingOutputStream(partOut);
+                out = countOut;
 
-            if (!format.equals("binary")) {
-                switch (format) {
-                    case "base64" -> {
-                        out.write(Base64File.HEADER.getBytes(StandardCharsets.US_ASCII));
-                        out = Base64File.encode(out);
-                    }
-                    case "hex" -> {
-                        out = new HexOutputStream(out);
+                if (!format.equals("binary")) {
+                    switch (format) {
+                        case "base64" -> {
+                            out.write(Base64File.HEADER.getBytes(StandardCharsets.US_ASCII));
+                            out = Base64File.encode(out);
+                        }
+                        case "hex" -> {
+                            out = new HexOutputStream(out);
+                        }
                     }
                 }
-            }
 
-            if (encrypt) {
-                out = createEncryptedStream(log, out);
-            }
+                if (encrypt) {
+                    out = createEncryptedStream(log, out);
+                }
 
-            if (compression != null) {
-                out = compression.compress(out, compressionLevel);
-            }
+                if (compression != null) {
+                    out = compression.compress(out, compressionLevel);
+                }
 
-            if (noZip) {
-                try {
-                    countIn = new CountingOutputStream(out);
-                    out = countIn;
+                if (noZip) {
+                    try {
+                        countIn = new CountingOutputStream(out);
+                        out = countIn;
 
-                    Path file = inputFiles.get(0);
+                        Path file = inputFiles.get(0);
 
+                        if (verbose) {
+                            long size = Files.size(file);
+                            log.println(file.toString() + " (" + UIUtils.formatBytesShort(size) + ")");
+                        }
+
+                        try (BufferedInputStream in = new BufferedInputStream(Files.newInputStream(file))) {
+                            byte[] buffer = new byte[1 * 1024 * 1024];
+                            int r;
+                            while ((r = in.read(buffer, 0, buffer.length)) != -1) {
+                                out.write(buffer, 0, r);
+                            }
+                        }
+                    } finally {
+                        if (out != null) {
+                            out.close();
+                            out = null;
+                        }
+                    }
                     if (verbose) {
-                        long size = Files.size(file);
-                        log.println(file.toString() + " (" + UIUtils.formatBytesShort(size) + ")");
+                        printFinalResultInformation(countIn, countOut, partSize, log);
                     }
+                    return;
+                }
 
-                    try (BufferedInputStream in = new BufferedInputStream(Files.newInputStream(file))) {
-                        byte[] buffer = new byte[1 * 1024 * 1024];
-                        int r;
-                        while ((r = in.read(buffer, 0, buffer.length)) != -1) {
-                            out.write(buffer, 0, r);
+                countIn = new CountingOutputStream(out);
+                ZipOutputStream zipOut = new ZipOutputStream(countIn, StandardCharsets.UTF_8);
+                out = zipOut;
+
+                final CountingOutputStream inCount = countIn;
+                final CountingOutputStream outCount = countOut;
+
+                ZipCreator writer = new ZipCreator(zipOut, inputFiles.toArray(Path[]::new), fileHash) {
+                    @Override
+                    protected void onFile(Path file) {
+                        if (verbose && Files.isDirectory(file)) {
+                            log.println("Adding " + file.toString());
                         }
                     }
-                } finally {
-                    if (out != null) {
-                        out.close();
-                        out = null;
-                    }
-                }
-                if (verbose) {
-                    printFinalResultInformation(countIn, countOut, partSize, log);
-                }
-                return;
-            }
 
-            countIn = new CountingOutputStream(out);
-            ZipOutputStream zipOut = new ZipOutputStream(countIn, StandardCharsets.UTF_8);
-            out = zipOut;
+                    @Override
+                    protected void onFileProgress(Path file, boolean crc, long currentBytes, long totalBytes) {
+                        if (verbose && currentBytes == 0) {
+                            if (crc) {
+                                String sizeFormatted = "(" + UIUtils.formatBytesShort(totalBytes) + ")";
 
-            final CountingOutputStream inCount = countIn;
-            final CountingOutputStream outCount = countOut;
+                                long dataIn = inCount.getCount();
+                                long dataOut = outCount.getCount();
 
-            ZipCreator writer = new ZipCreator(zipOut, inputFiles.toArray(Path[]::new), fileHash) {
-                @Override
-                protected void onFile(Path file) {
-                    if (verbose && Files.isDirectory(file)) {
-                        log.println("Adding " + file.toString());
-                    }
-                }
+                                String dataInText = UIUtils.formatBytesShort(dataIn);
+                                String dataOutText = UIUtils.formatBytesShort(dataOut);
+                                String ratio = "0%";
+                                if (dataIn != 0) {
+                                    ratio = String.format("%.2f", (dataOut / ((double) dataIn)) * 100.0) + "%";
+                                }
 
-                @Override
-                protected void onFileProgress(Path file, boolean crc, long currentBytes, long totalBytes) {
-                    if (verbose && currentBytes == 0) {
-                        if (crc) {
-                            String sizeFormatted = "(" + UIUtils.formatBytesShort(totalBytes) + ")";
+                                String crcName = "(CRC32";
+                                if (getHash() != null) {
+                                    crcName += "/" + getHash().getName();
+                                }
+                                crcName += ")";
 
-                            long dataIn = inCount.getCount();
-                            long dataOut = outCount.getCount();
-
-                            String dataInText = UIUtils.formatBytesShort(dataIn);
-                            String dataOutText = UIUtils.formatBytesShort(dataOut);
-                            String ratio = "0%";
-                            if (dataIn != 0) {
-                                ratio = String.format("%.2f", (dataOut / ((double) dataIn)) * 100.0) + "%";
+                                log.print("(" + dataInText + ">" + dataOutText + "; " + ratio + ") " + file.toString() + " " + sizeFormatted + " " + crcName);
+                            } else {
+                                log.println(" (Writing)");
                             }
-
-                            String crcName = "(CRC32";
-                            if (getHash() != null) {
-                                crcName += "/" + getHash().getName();
-                            }
-                            crcName += ")";
-
-                            log.print("(" + dataInText + ">" + dataOutText + "; " + ratio + ") " + file.toString() + " " + sizeFormatted + " " + crcName);
-                        } else {
-                            log.println(" (Writing)");
                         }
                     }
-                }
 
-                @Override
-                protected void onFileError(Path file, IOException reason) {
-                    log.println("Error on: " + file.toString());
-                    reason.printStackTrace(log);
+                    @Override
+                    protected void onFileError(Path file, IOException reason) {
+                        log.println("Error on: " + file.toString());
+                        reason.printStackTrace(log);
+                    }
+                };
+                writer.create();
+            } finally {
+                if (out != null) {
+                    out.close();
+                    out = null;
                 }
-            };
-            writer.create();
-        } finally {
-            if (out != null) {
-                out.close();
-                out = null;
             }
-        }
-        if (verbose && countIn != null && countOut != null) {
-            printFinalResultInformation(countIn, countOut, partSize, log);
+            if (verbose && countIn != null && countOut != null) {
+                printFinalResultInformation(countIn, countOut, partSize, log);
+            }
+        } catch (Throwable t) {
+            if (partOut != null) {
+                partOut.deleteFiles();
+            }
+            throw t;
         }
     }
 

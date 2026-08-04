@@ -29,7 +29,6 @@ package matinilad.jmultidiskzip;
 import java.io.InputStream;
 import java.io.PrintStream;
 import java.util.Arrays;
-import matinilad.jmultidiskzip.ui.UIUtils;
 import matinilad.jmultidiskzip.ui.cli.CLInterface;
 import matinilad.jmultidiskzip.ui.gui.GUInterface;
 
@@ -42,7 +41,7 @@ public class Main {
     private static void printHelp(PrintStream out) {
         out.println("Available Interfaces:");
         out.println("-cli (Command line interface)");
-        out.println("-gui (Graphical user interface) [Default]");
+        out.println("-gui (Graphical user interface)");
     }
     
     public static void main(String[] args) throws Exception {
@@ -50,7 +49,7 @@ public class Main {
         PrintStream out = System.out;
         
         if (args.length == 0) {
-            GUInterface.run();
+            printHelp(System.out);
             return;
         }
         switch (args[0]) {

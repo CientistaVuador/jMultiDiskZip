@@ -41,13 +41,15 @@ import matinilad.jmultidiskzip.ui.UIUtils;
  */
 @SuppressWarnings("serial")
 public abstract class ProgressDialog extends javax.swing.JDialog {
-
-    private String fileName = "Filename";
+    
+    private final List<Runnable> errorCleanupActions = new ArrayList<>();
+    
+    private String filename = "Filename";
     private long fileProgress = 0;
     private long fileSize = 0;
 
     private long lastFileUpdateProgress = 0;
-    private long lastFileUpdateTime = System.nanoTime();
+    private long lastFileUpdateTime = -1;
 
     private Future<?> fileStatusUpdate = null;
 
@@ -55,13 +57,14 @@ public abstract class ProgressDialog extends javax.swing.JDialog {
     private long totalOutputCount = 0;
     private long partSize = -1;
     private boolean reverseCompressionRatio = false;
-
+    private int fileCount = 0;
+    
     private Future<?> statusUpdate = null;
 
     private int errors = 0;
-    
+
     private Thread thread = null;
-    
+
     public ProgressDialog(java.awt.Frame parent, boolean modal) {
         super(parent, modal);
         initComponents();
@@ -76,18 +79,80 @@ public abstract class ProgressDialog extends javax.swing.JDialog {
         setLocationRelativeTo(dialog);
     }
 
+    private void guiSetFilename(String name) {
+        this.filenameField.setText(name);
+    }
+
+    private void guiSetFileProgress(long current, long size) {
+        this.sizeField.setText(UIUtils.formatBytesShort(current) + " of " + UIUtils.formatBytesShort(size));
+        double progress = current / ((double) size);
+        if (!Double.isFinite(progress)) {
+            progress = 0.0;
+        }
+        progress = Math.min(Math.max(progress, 0.0), 1.0);
+        int progressInt = (int) (this.progressBar.getMaximum() * progress);
+        progressInt += this.progressBar.getMinimum();
+        this.progressBar.setValue(progressInt);
+    }
+
+    private void guiSetFileSpeed(long bytes) {
+        this.speedField.setText(UIUtils.formatBytesShort(bytes) + "/s");
+    }
+
+    private void guiSetFileEstimatedTime(long time) {
+        this.estimatedTimeField.setText(UIUtils.formatCountdownSeconds(time));
+    }
+
+    private void guiSetTotalInputOutput(long totalInput, long totalOutput, boolean reverseRatio) {
+        this.totalInputField.setText(UIUtils.formatBytes(totalInput));
+        this.totalOutputField.setText(UIUtils.formatBytes(totalOutput));
+        double compressionRatio = totalOutput / ((double) totalInput);
+        if (reverseRatio) {
+            compressionRatio = 1.0 / compressionRatio;
+        }
+        if (!Double.isFinite(compressionRatio)) {
+            compressionRatio = 0.0;
+        }
+        this.compressionRatioField.setText(String.format("%.2f", compressionRatio * 100.0) + "%");
+    }
+
+    private void guiSetTotalFiles(int files) {
+        this.totalFilesField.setText(files + (files == 1 ? " File " : " Files "));
+    }
+
+    private void guiSetPartCount(long size, long partSize) {
+        if (partSize <= 0) {
+            this.partCountField.setText("");
+            return;
+        }
+        long parts = size / partSize;
+        long remainder = size - (parts * partSize);
+        String partCount = "";
+        if (parts != 0) {
+            partCount += parts + (parts == 1 ? " Part" : " Parts") + " of " + UIUtils.formatBytes(partSize);
+            if (remainder != 0) {
+                partCount += " + ";
+            }
+        }
+        if (remainder != 0) {
+            partCount += "1 Part of " + UIUtils.formatBytes(remainder);
+        }
+        this.partCountField.setText(partCount);
+    }
+
+    private void guiSetLogErrorsLabel(int err) {
+        this.logErrorsLabel.setText("Log (" + err + (err == 1 ? " Error" : " Errors") + ")");
+    }
+
     private void clearComponents() {
-        this.filenameField.setText("");
-        this.progressBar.setValue(0);
-        this.progressBarLabel.setText(String.format("%.2f", 0f) + "%");
-        this.sizeField.setText(UIUtils.formatBytesShort(0) + " of " + UIUtils.formatBytes(0));
-        this.speedField.setText(UIUtils.formatBytesShort(0) + "/s");
-        this.estimatedTimeField.setText(UIUtils.formatCountdownSeconds(0));
-        this.totalInputField.setText(UIUtils.formatBytes(0));
-        this.totalOutputField.setText(UIUtils.formatBytes(0));
-        this.compressionRatioField.setText(String.format("%.2f", 0f) + "%");
-        this.partCountField.setText("");
-        this.logErrorsLabel.setText("Log (0 Errors):");
+        guiSetFilename("");
+        guiSetFileProgress(0, 0);
+        guiSetFileSpeed(0);
+        guiSetFileEstimatedTime(0);
+        guiSetTotalInputOutput(0, 0, false);
+        guiSetTotalFiles(0);
+        guiSetPartCount(0, -1);
+        guiSetLogErrorsLabel(0);
         this.logTextArea.setText("");
         this.cancelButton.setEnabled(false);
     }
@@ -102,7 +167,6 @@ public abstract class ProgressDialog extends javax.swing.JDialog {
         jPanel1 = new javax.swing.JPanel();
         filenameField = new javax.swing.JTextField();
         progressBar = new javax.swing.JProgressBar();
-        progressBarLabel = new javax.swing.JLabel();
         speedField = new javax.swing.JTextField();
         sizeField = new javax.swing.JTextField();
         estimatedTimeField = new javax.swing.JTextField();
@@ -116,12 +180,19 @@ public abstract class ProgressDialog extends javax.swing.JDialog {
         logErrorsLabel = new javax.swing.JLabel();
         jScrollPane1 = new javax.swing.JScrollPane();
         logTextArea = new javax.swing.JTextArea();
+        jLabel4 = new javax.swing.JLabel();
+        totalFilesField = new javax.swing.JTextField();
         cancelButton = new javax.swing.JButton();
         partCountField = new javax.swing.JTextField();
 
         setDefaultCloseOperation(javax.swing.WindowConstants.DISPOSE_ON_CLOSE);
         setTitle("Title goes here");
         setMinimumSize(new java.awt.Dimension(250, 450));
+        addWindowListener(new java.awt.event.WindowAdapter() {
+            public void windowClosing(java.awt.event.WindowEvent evt) {
+                formWindowClosing(evt);
+            }
+        });
 
         jPanel1.setBorder(javax.swing.BorderFactory.createTitledBorder("Current file status"));
 
@@ -130,8 +201,9 @@ public abstract class ProgressDialog extends javax.swing.JDialog {
         filenameField.setBorder(null);
 
         progressBar.setMaximum(10000);
-
-        progressBarLabel.setText("100.00%");
+        progressBar.setToolTipText("");
+        progressBar.setName(""); // NOI18N
+        progressBar.setStringPainted(true);
 
         speedField.setEditable(false);
         speedField.setHorizontalAlignment(javax.swing.JTextField.RIGHT);
@@ -154,17 +226,14 @@ public abstract class ProgressDialog extends javax.swing.JDialog {
             jPanel1Layout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
             .addGroup(jPanel1Layout.createSequentialGroup()
                 .addContainerGap()
-                .addGroup(jPanel1Layout.createParallelGroup(javax.swing.GroupLayout.Alignment.TRAILING)
-                    .addComponent(filenameField, javax.swing.GroupLayout.Alignment.LEADING)
-                    .addComponent(estimatedTimeField)
-                    .addGroup(javax.swing.GroupLayout.Alignment.LEADING, jPanel1Layout.createSequentialGroup()
-                        .addComponent(progressBar, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, Short.MAX_VALUE)
+                .addGroup(jPanel1Layout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
+                    .addComponent(progressBar, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, Short.MAX_VALUE)
+                    .addComponent(filenameField)
+                    .addComponent(estimatedTimeField, javax.swing.GroupLayout.Alignment.TRAILING)
+                    .addGroup(javax.swing.GroupLayout.Alignment.TRAILING, jPanel1Layout.createSequentialGroup()
+                        .addComponent(sizeField, javax.swing.GroupLayout.DEFAULT_SIZE, 283, Short.MAX_VALUE)
                         .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
-                        .addComponent(progressBarLabel))
-                    .addGroup(jPanel1Layout.createSequentialGroup()
-                        .addComponent(sizeField)
-                        .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
-                        .addComponent(speedField)))
+                        .addComponent(speedField, javax.swing.GroupLayout.DEFAULT_SIZE, 239, Short.MAX_VALUE)))
                 .addContainerGap())
         );
         jPanel1Layout.setVerticalGroup(
@@ -173,9 +242,7 @@ public abstract class ProgressDialog extends javax.swing.JDialog {
                 .addContainerGap()
                 .addComponent(filenameField, javax.swing.GroupLayout.PREFERRED_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.PREFERRED_SIZE)
                 .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
-                .addGroup(jPanel1Layout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING, false)
-                    .addComponent(progressBar, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, Short.MAX_VALUE)
-                    .addComponent(progressBarLabel, javax.swing.GroupLayout.PREFERRED_SIZE, 20, javax.swing.GroupLayout.PREFERRED_SIZE))
+                .addComponent(progressBar, javax.swing.GroupLayout.PREFERRED_SIZE, 20, javax.swing.GroupLayout.PREFERRED_SIZE)
                 .addGap(6, 6, 6)
                 .addGroup(jPanel1Layout.createParallelGroup(javax.swing.GroupLayout.Alignment.BASELINE)
                     .addComponent(sizeField, javax.swing.GroupLayout.PREFERRED_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.PREFERRED_SIZE)
@@ -212,26 +279,33 @@ public abstract class ProgressDialog extends javax.swing.JDialog {
         logTextArea.setRows(5);
         jScrollPane1.setViewportView(logTextArea);
 
+        jLabel4.setText("Total (Files):");
+
+        totalFilesField.setEditable(false);
+        totalFilesField.setText("100 Files");
+        totalFilesField.setBorder(null);
+
         javax.swing.GroupLayout jPanel2Layout = new javax.swing.GroupLayout(jPanel2);
         jPanel2.setLayout(jPanel2Layout);
         jPanel2Layout.setHorizontalGroup(
             jPanel2Layout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
-            .addGroup(javax.swing.GroupLayout.Alignment.TRAILING, jPanel2Layout.createSequentialGroup()
+            .addGroup(jPanel2Layout.createSequentialGroup()
                 .addContainerGap()
-                .addGroup(jPanel2Layout.createParallelGroup(javax.swing.GroupLayout.Alignment.TRAILING)
-                    .addComponent(jScrollPane1, javax.swing.GroupLayout.DEFAULT_SIZE, 492, Short.MAX_VALUE)
-                    .addComponent(logErrorsLabel, javax.swing.GroupLayout.Alignment.LEADING, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, Short.MAX_VALUE)
-                    .addGroup(javax.swing.GroupLayout.Alignment.LEADING, jPanel2Layout.createSequentialGroup()
-                        .addGroup(jPanel2Layout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
-                            .addGroup(jPanel2Layout.createParallelGroup(javax.swing.GroupLayout.Alignment.TRAILING, false)
-                                .addComponent(jLabel1, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, Short.MAX_VALUE)
-                                .addComponent(jLabel2, javax.swing.GroupLayout.DEFAULT_SIZE, 100, Short.MAX_VALUE))
-                            .addComponent(jLabel3))
+                .addGroup(jPanel2Layout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
+                    .addComponent(jScrollPane1, javax.swing.GroupLayout.Alignment.TRAILING)
+                    .addComponent(logErrorsLabel, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, Short.MAX_VALUE)
+                    .addGroup(jPanel2Layout.createSequentialGroup()
+                        .addGroup(jPanel2Layout.createParallelGroup(javax.swing.GroupLayout.Alignment.TRAILING, false)
+                            .addComponent(jLabel4, javax.swing.GroupLayout.Alignment.LEADING, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, Short.MAX_VALUE)
+                            .addComponent(jLabel1, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, Short.MAX_VALUE)
+                            .addComponent(jLabel2, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, Short.MAX_VALUE)
+                            .addComponent(jLabel3, javax.swing.GroupLayout.Alignment.LEADING, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, Short.MAX_VALUE))
                         .addGap(9, 9, 9)
                         .addGroup(jPanel2Layout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
                             .addComponent(compressionRatioField)
                             .addComponent(totalOutputField)
-                            .addComponent(totalInputField))))
+                            .addComponent(totalInputField)
+                            .addComponent(totalFilesField))))
                 .addContainerGap())
         );
         jPanel2Layout.setVerticalGroup(
@@ -250,9 +324,13 @@ public abstract class ProgressDialog extends javax.swing.JDialog {
                     .addComponent(jLabel3)
                     .addComponent(compressionRatioField, javax.swing.GroupLayout.PREFERRED_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.PREFERRED_SIZE))
                 .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
+                .addGroup(jPanel2Layout.createParallelGroup(javax.swing.GroupLayout.Alignment.BASELINE)
+                    .addComponent(jLabel4)
+                    .addComponent(totalFilesField, javax.swing.GroupLayout.PREFERRED_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.PREFERRED_SIZE))
+                .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
                 .addComponent(logErrorsLabel)
                 .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
-                .addComponent(jScrollPane1, javax.swing.GroupLayout.DEFAULT_SIZE, 124, Short.MAX_VALUE)
+                .addComponent(jScrollPane1, javax.swing.GroupLayout.DEFAULT_SIZE, 150, Short.MAX_VALUE)
                 .addContainerGap())
         );
 
@@ -301,19 +379,23 @@ public abstract class ProgressDialog extends javax.swing.JDialog {
     }// </editor-fold>//GEN-END:initComponents
 
     private void cancelButtonActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_cancelButtonActionPerformed
-        if (this.thread != null) {
+        if (this.thread != null && this.thread.isAlive()) {
             this.thread.interrupt();
-            this.logTextArea.append("Sent cancel signal\n");
+            this.logTextArea.append("Sent interrupt signal\n");
         }
     }//GEN-LAST:event_cancelButtonActionPerformed
 
-    public String getFileName() {
-        return fileName;
+    private void formWindowClosing(java.awt.event.WindowEvent evt) {//GEN-FIRST:event_formWindowClosing
+        cancelButtonActionPerformed(null);
+    }//GEN-LAST:event_formWindowClosing
+
+    public String getFilename() {
+        return filename;
     }
 
-    public void setFileName(String fileName) {
-        Objects.requireNonNull(fileName, "fileName is null");
-        this.fileName = fileName;
+    public void setFilename(String filename) {
+        Objects.requireNonNull(filename, "fileName is null");
+        this.filename = filename;
     }
 
     public long getFileProgress() {
@@ -344,7 +426,7 @@ public abstract class ProgressDialog extends javax.swing.JDialog {
         this.fileSize = fileSize;
         this.fileProgress = 0;
         this.lastFileUpdateProgress = 0;
-        this.lastFileUpdateTime = System.nanoTime();
+        this.lastFileUpdateTime = -1;
     }
 
     public boolean updateFileStatus(boolean force) {
@@ -354,43 +436,40 @@ public abstract class ProgressDialog extends javax.swing.JDialog {
 
         List<Runnable> toRun = new ArrayList<>();
 
-        final String newName = getFileName();
-        final String newSizeField = UIUtils.formatBytesShort(getFileProgress()) + " of " + UIUtils.formatBytesShort(getFileSize());
-
-        double progress = (getFileProgress() / ((double) getFileSize())) * 100.0;
-        if (!Double.isFinite(progress)) {
-            progress = 0.0;
-        }
-
-        final int progressInt = (int) (progress * 100.0);
-        final String newProgressLabel = String.format("%.2f", progress) + "%";
+        final String newName = getFilename();
+        final long newProgress = getFileProgress();
+        final long newSize = getFileSize();
 
         Runnable updateFile = () -> {
-            this.filenameField.setText(newName);
-            this.sizeField.setText(newSizeField);
-            this.progressBar.setValue(progressInt);
-            this.progressBarLabel.setText(newProgressLabel);
+            guiSetFilename(newName);
+            guiSetFileProgress(newProgress, newSize);
         };
         toRun.add(updateFile);
 
-        double timePassed = (System.nanoTime() - this.lastFileUpdateTime) / 1E9d;
-        if (timePassed >= 1.0) {
-            long bytesProcessed = getFileProgress() - this.lastFileUpdateProgress;
-
-            double transferSpeed = bytesProcessed / timePassed;
-            double estimatedTime = (getFileSize() - getFileProgress()) / transferSpeed;
-
+        if (this.lastFileUpdateTime == -1) {
             this.lastFileUpdateTime = System.nanoTime();
-            this.lastFileUpdateProgress = getFileProgress();
-
-            final String newTransferSpeed = UIUtils.formatBytesShort((long) transferSpeed) + "/s";
-            final String newEstimatedTime = UIUtils.formatCountdownSeconds((long) estimatedTime);
-
             Runnable updateTime = () -> {
-                this.speedField.setText(newTransferSpeed);
-                this.estimatedTimeField.setText(newEstimatedTime);
+                guiSetFileSpeed(0);
+                guiSetFileEstimatedTime(0);
             };
             toRun.add(updateTime);
+        } else {
+            double timePassed = (System.nanoTime() - this.lastFileUpdateTime) / 1E9d;
+            if (timePassed >= 1.0) {
+                long bytesProcessed = getFileProgress() - this.lastFileUpdateProgress;
+
+                final double transferSpeed = bytesProcessed / timePassed;
+                final double estimatedTime = (getFileSize() - getFileProgress()) / transferSpeed;
+
+                this.lastFileUpdateTime = System.nanoTime();
+                this.lastFileUpdateProgress = getFileProgress();
+
+                Runnable updateTime = () -> {
+                    guiSetFileSpeed((long) transferSpeed);
+                    guiSetFileEstimatedTime((long) estimatedTime);
+                };
+                toRun.add(updateTime);
+            }
         }
 
         if (force) {
@@ -465,56 +544,42 @@ public abstract class ProgressDialog extends javax.swing.JDialog {
         this.partSize = partSize;
     }
 
+    public int getFileCount() {
+        return fileCount;
+    }
+
+    public void incrementFileCount(int toIncrement) {
+        if (toIncrement == 0) {
+            return;
+        }
+        int result = this.fileCount + toIncrement;
+        if (result < 0) {
+            result = 0;
+        }
+        this.fileCount = result;
+    }
+
+    public void resetFileCount() {
+        this.fileCount = 0;
+    }
+
     public boolean updateStatus(boolean force) {
         if (!force && this.statusUpdate != null && !this.statusUpdate.isDone()) {
             return false;
         }
 
-        long input = getTotalInputCount();
-        long output = getTotalOutputCount();
-        long part = getPartSize();
-
-        final String newTotalInput = UIUtils.formatBytes(input);
-        final String newTotalOutput = UIUtils.formatBytes(output);
-
-        double compressionRatio = output / ((double) input);
-        if (isReverseCompressionRatio()) {
-            compressionRatio = 1.0 / compressionRatio;
-        }
-        if (!Double.isFinite(compressionRatio)) {
-            compressionRatio = 0.0;
-        }
-
-        final String newCompressionRatio = String.format("%.2f", compressionRatio) + "%";
-
-        final String newPartCount;
-        if (part > 0) {
-            long parts = output / part;
-            long remainder = output - (parts * part);
-
-            String partCount = "";
-            if (parts != 0) {
-                partCount += parts + (parts == 1 ? " Part" : " Parts") + " of " + UIUtils.formatBytes(part);
-                if (remainder != 0) {
-                    partCount += " + ";
-                }
-            }
-            if (remainder != 0) {
-                partCount += "1 Part of " + UIUtils.formatBytes(remainder);
-            }
-
-            newPartCount = partCount;
-        } else {
-            newPartCount = "";
-        }
-
+        final long input = getTotalInputCount();
+        final long output = getTotalOutputCount();
+        final boolean reverseRatio = isReverseCompressionRatio();
+        final long part = getPartSize();
+        final int fCount = getFileCount();
+        
         Runnable updateTask = () -> {
-            this.totalInputField.setText(newTotalInput);
-            this.totalOutputField.setText(newTotalOutput);
-            this.compressionRatioField.setText(newCompressionRatio);
-            this.partCountField.setText(newPartCount);
+            guiSetTotalInputOutput(input, output, reverseRatio);
+            guiSetPartCount(output, part);
+            guiSetTotalFiles(fCount);
         };
-
+        
         if (force) {
             CompletableFuture<Void> completableFuture = new CompletableFuture<>();
             SwingUtilities.invokeLater(() -> {
@@ -551,20 +616,19 @@ public abstract class ProgressDialog extends javax.swing.JDialog {
             throw new IllegalArgumentException("toIncrement < 0");
         }
         this.errors += toIncrement;
-
-        int err = this.errors;
-        final String newLogErrorsLabel = "Log (" + err + " " + (err == 1 ? "Error" : "Errors") + "):";
+        
+        final int finalErrors = getErrors();
         SwingUtilities.invokeLater(() -> {
-            this.logErrorsLabel.setText(newLogErrorsLabel);
+            guiSetLogErrorsLabel(finalErrors);
         });
     }
-    
+
     public void print(String text) {
         SwingUtilities.invokeLater(() -> {
             this.logTextArea.append(text);
         });
     }
-    
+
     public void println(String text) {
         SwingUtilities.invokeLater(() -> {
             this.logTextArea.append(text);
@@ -572,37 +636,50 @@ public abstract class ProgressDialog extends javax.swing.JDialog {
         });
     }
     
+    public void registerErrorCleanupAction(Runnable r) {
+        Objects.requireNonNull(r, "r is null");
+        this.errorCleanupActions.add(r);
+    }
+    
     public void start() {
         if (this.thread != null) {
-            throw new UnsupportedOperationException("already running");
+            throw new UnsupportedOperationException("already started");
         }
-        clearComponents();
         this.thread = new Thread(() -> {
             try {
                 try {
                     ProgressDialog.this.run();
                 } catch (Throwable t) {
-                    ProgressDialog.this.incrementErrors(1);
-                    ProgressDialog.this.print(UIUtils.stacktraceOf(t));
+                    if (!(t instanceof InterruptedException)) {
+                        ProgressDialog.this.incrementErrors(1);
+                        ProgressDialog.this.print(UIUtils.stacktraceOf(t));
+                    }
+                    for (Runnable r:this.errorCleanupActions) {
+                        try {
+                            r.run();
+                        } catch (Throwable e) {
+                            //ignore
+                        }
+                    }
                 }
             } finally {
                 SwingUtilities.invokeLater(() -> {
                     this.logTextArea.append("Finished\n");
                     this.cancelButton.setEnabled(false);
-                    this.thread = null;
                 });
+                this.errorCleanupActions.clear();
             }
         });
         this.thread.setDaemon(true);
         this.thread.start();
-        
+
         this.cancelButton.setEnabled(true);
     }
-    
+
     public boolean isRunning() {
         return this.thread != null;
     }
-    
+
     public abstract void run() throws Throwable;
 
     // Variables declaration - do not modify//GEN-BEGIN:variables
@@ -613,6 +690,7 @@ public abstract class ProgressDialog extends javax.swing.JDialog {
     private javax.swing.JLabel jLabel1;
     private javax.swing.JLabel jLabel2;
     private javax.swing.JLabel jLabel3;
+    private javax.swing.JLabel jLabel4;
     private javax.swing.JPanel jPanel1;
     private javax.swing.JPanel jPanel2;
     private javax.swing.JScrollPane jScrollPane1;
@@ -620,9 +698,9 @@ public abstract class ProgressDialog extends javax.swing.JDialog {
     private javax.swing.JTextArea logTextArea;
     private javax.swing.JTextField partCountField;
     private javax.swing.JProgressBar progressBar;
-    private javax.swing.JLabel progressBarLabel;
     private javax.swing.JTextField sizeField;
     private javax.swing.JTextField speedField;
+    private javax.swing.JTextField totalFilesField;
     private javax.swing.JTextField totalInputField;
     private javax.swing.JTextField totalOutputField;
     // End of variables declaration//GEN-END:variables

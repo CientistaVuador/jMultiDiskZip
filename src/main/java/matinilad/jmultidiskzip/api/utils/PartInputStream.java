@@ -75,9 +75,7 @@ public class PartInputStream extends InputStream {
             partNumber
         };
     }
-
-    private final ChecksumAlgorithmFactory checksumFactory;
-
+    
     private final Object lock = new Object();
     private volatile boolean waitingForSignal = false;
     private volatile Path nextDirectory = null;
@@ -95,7 +93,7 @@ public class PartInputStream extends InputStream {
 
     private boolean closed = false;
 
-    public PartInputStream(Path partOne, ChecksumAlgorithmFactory checksumFactory) {
+    public PartInputStream(Path partOne) {
         Object[] pathData = splitPathData(partOne);
 
         this.directory = (Path) pathData[0];
@@ -106,12 +104,6 @@ public class PartInputStream extends InputStream {
         if (number != 1) {
             throw new IllegalArgumentException("Part number must be 1! Found: " + number);
         }
-
-        this.checksumFactory = checksumFactory;
-    }
-
-    public PartInputStream(Path partOne) {
-        this(partOne, ChecksumAlgorithmFactory.getDefault());
     }
 
     public void continueSignal(Path newDirectory, boolean closeStream) {
@@ -191,7 +183,7 @@ public class PartInputStream extends InputStream {
         }
         this.partStream = new BufferedInputStream(Files.newInputStream(partFile));
         
-        for (ChecksumAlgorithm hash : this.checksumFactory.getAlgorithms()) {
+        for (ChecksumAlgorithm hash : ChecksumAlgorithmFactory.getDefault().getAlgorithms()) {
             for (int i = 0; i < hash.getNumberOfExtensions(); i++) {
                 Path hashFile = this.directory.resolve(this.name + partString + "." + hash.getExtension(i));
                 if (Files.isRegularFile(hashFile)) {
@@ -217,7 +209,7 @@ public class PartInputStream extends InputStream {
         if (this.closed) {
             return -1;
         }
-
+        
         int r = -1;
         if (this.partStream != null) {
             r = this.partStream.read();
