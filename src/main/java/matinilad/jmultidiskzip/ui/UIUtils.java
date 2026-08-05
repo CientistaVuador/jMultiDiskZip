@@ -104,6 +104,6 @@ public class UIUtils {
         try (PrintStream print = new PrintStream(out, false, StandardCharsets.UTF_8)) {
             t.printStackTrace(print);
         }
-        return out.toString(StandardCharsets.UTF_8);
+        return out.toString(StandardCharsets.UTF_8).trim();
     }
 }

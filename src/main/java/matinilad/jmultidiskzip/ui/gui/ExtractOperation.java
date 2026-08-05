@@ -24,48 +24,33 @@
  *
  * For more information, please refer to <https://unlicense.org>
  */
-package matinilad.jmultidiskzip;
+package matinilad.jmultidiskzip.ui.gui;
 
-import java.io.InputStream;
-import java.io.PrintStream;
-import java.util.Arrays;
-import matinilad.jmultidiskzip.ui.cli.CLInterface;
-import matinilad.jmultidiskzip.ui.gui.GUInterface;
+import java.awt.Dialog;
+import java.awt.Frame;
+import java.util.Objects;
 
 /**
  *
  * @author Cien
  */
-public class Main {
+@SuppressWarnings("serial")
+public class ExtractOperation extends ProgressDialog {
     
-    private static void printHelp(PrintStream out) {
-        out.println("Available Interfaces:");
-        out.println("-cli (Command line interface)");
-        out.println("-gui (Graphical user interface) [Default]");
+    private final ExtractOperationSettings settings;
+    
+    public ExtractOperation(ExtractOperationSettings settings, Frame parent, boolean modal) {
+        super(parent, modal);
+        this.settings = Objects.requireNonNull(settings, "settings is null");
     }
     
-    public static void main(String[] args) throws Exception {
-        InputStream in = System.in;
-        PrintStream out = System.out;
-        
-        if (args.length == 0) {
-            GUInterface.run();
-            return;
-        }
-        switch (args[0]) {
-            case "-cli" -> {
-                CLInterface.run(in, out, Arrays.copyOfRange(args, 1, args.length));
-            }
-            case "-gui" -> {
-                GUInterface.run();
-            }
-            default -> {
-                if (!args[0].equals("-help")) {
-                    out.println("Unknown Interface: "+args[0]);
-                }
-                printHelp(out);
-            }
-        }
+    public ExtractOperation(ExtractOperationSettings settings, Dialog parent, boolean modal) {
+        super(parent, modal);
+        this.settings = Objects.requireNonNull(settings, "settings is null");
     }
-    
+
+    @Override
+    public void run() throws Throwable {
+        //todo
+    }
 }

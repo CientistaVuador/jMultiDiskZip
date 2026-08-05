@@ -26,12 +26,15 @@
  */
 package matinilad.jmultidiskzip.ui.gui;
 
+import java.awt.Toolkit;
+import java.io.IOException;
 import java.lang.reflect.InvocationTargetException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Future;
+import javax.swing.JOptionPane;
 import javax.swing.SwingUtilities;
 import matinilad.jmultidiskzip.ui.UIUtils;
 
@@ -41,9 +44,7 @@ import matinilad.jmultidiskzip.ui.UIUtils;
  */
 @SuppressWarnings("serial")
 public abstract class ProgressDialog extends javax.swing.JDialog {
-    
-    private final List<Runnable> errorCleanupActions = new ArrayList<>();
-    
+
     private String filename = "Filename";
     private long fileProgress = 0;
     private long fileSize = 0;
@@ -58,7 +59,7 @@ public abstract class ProgressDialog extends javax.swing.JDialog {
     private long partSize = -1;
     private boolean reverseCompressionRatio = false;
     private int fileCount = 0;
-    
+
     private Future<?> statusUpdate = null;
 
     private int errors = 0;
@@ -185,7 +186,7 @@ public abstract class ProgressDialog extends javax.swing.JDialog {
         cancelButton = new javax.swing.JButton();
         partCountField = new javax.swing.JTextField();
 
-        setDefaultCloseOperation(javax.swing.WindowConstants.DISPOSE_ON_CLOSE);
+        setDefaultCloseOperation(javax.swing.WindowConstants.DO_NOTHING_ON_CLOSE);
         setTitle("Title goes here");
         setMinimumSize(new java.awt.Dimension(250, 450));
         addWindowListener(new java.awt.event.WindowAdapter() {
@@ -378,15 +379,31 @@ public abstract class ProgressDialog extends javax.swing.JDialog {
         pack();
     }// </editor-fold>//GEN-END:initComponents
 
+    private int showCancelWindow() {
+        return JOptionPane.showConfirmDialog(
+                this,
+                "Are you sure you want to cancel the operation?",
+                "Cancel operation",
+                JOptionPane.YES_NO_OPTION,
+                JOptionPane.INFORMATION_MESSAGE
+        );
+    }
+
     private void cancelButtonActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_cancelButtonActionPerformed
-        if (this.thread != null && this.thread.isAlive()) {
-            this.thread.interrupt();
-            this.logTextArea.append("Sent interrupt signal\n");
+        if (showCancelWindow() == JOptionPane.YES_OPTION) {
+            cancel();
         }
     }//GEN-LAST:event_cancelButtonActionPerformed
 
     private void formWindowClosing(java.awt.event.WindowEvent evt) {//GEN-FIRST:event_formWindowClosing
-        cancelButtonActionPerformed(null);
+        if (this.cancelButton.isEnabled()) {
+            if (showCancelWindow() != JOptionPane.YES_OPTION) {
+                return;
+            }
+            cancel();
+        }
+        setVisible(false);
+        dispose();
     }//GEN-LAST:event_formWindowClosing
 
     public String getFilename() {
@@ -573,13 +590,13 @@ public abstract class ProgressDialog extends javax.swing.JDialog {
         final boolean reverseRatio = isReverseCompressionRatio();
         final long part = getPartSize();
         final int fCount = getFileCount();
-        
+
         Runnable updateTask = () -> {
             guiSetTotalInputOutput(input, output, reverseRatio);
             guiSetPartCount(output, part);
             guiSetTotalFiles(fCount);
         };
-        
+
         if (force) {
             CompletableFuture<Void> completableFuture = new CompletableFuture<>();
             SwingUtilities.invokeLater(() -> {
@@ -616,7 +633,7 @@ public abstract class ProgressDialog extends javax.swing.JDialog {
             throw new IllegalArgumentException("toIncrement < 0");
         }
         this.errors += toIncrement;
-        
+
         final int finalErrors = getErrors();
         SwingUtilities.invokeLater(() -> {
             guiSetLogErrorsLabel(finalErrors);
@@ -635,12 +652,7 @@ public abstract class ProgressDialog extends javax.swing.JDialog {
             this.logTextArea.append("\n");
         });
     }
-    
-    public void registerErrorCleanupAction(Runnable r) {
-        Objects.requireNonNull(r, "r is null");
-        this.errorCleanupActions.add(r);
-    }
-    
+
     public void start() {
         if (this.thread != null) {
             throw new UnsupportedOperationException("already started");
@@ -650,16 +662,46 @@ public abstract class ProgressDialog extends javax.swing.JDialog {
                 try {
                     ProgressDialog.this.run();
                 } catch (Throwable t) {
-                    if (!(t instanceof InterruptedException)) {
-                        ProgressDialog.this.incrementErrors(1);
-                        ProgressDialog.this.print(UIUtils.stacktraceOf(t));
-                    }
-                    for (Runnable r:this.errorCleanupActions) {
-                        try {
-                            r.run();
-                        } catch (Throwable e) {
-                            //ignore
+                    Runnable askClearFiles = () -> {
+                        if (isErrorCleanupEnabled()) {
+                            int response = JOptionPane.showConfirmDialog(
+                                    ProgressDialog.this,
+                                    "Clear files generated during the process?",
+                                    "Clear files",
+                                    JOptionPane.YES_NO_OPTION,
+                                    JOptionPane.WARNING_MESSAGE
+                            );
+                            if (response == JOptionPane.YES_OPTION) {
+                                try {
+                                    doErrorCleanup();
+                                } catch (Throwable e) {
+                                    //ignore
+                                }
+                            }
                         }
+                    };
+
+                    boolean interrupted = (t instanceof InterruptedException);
+                    if (!interrupted && t instanceof IOException io) {
+                        interrupted = (io.getCause() instanceof InterruptedException);
+                    }
+                    if (!interrupted) {
+                        ProgressDialog.this.incrementErrors(1);
+                        ProgressDialog.this.println(UIUtils.stacktraceOf(t));
+                        SwingUtilities.invokeLater(() -> {
+                            Toolkit.getDefaultToolkit().beep();
+                            JOptionPane.showMessageDialog(
+                                    ProgressDialog.this,
+                                    "The operation has failed, check log for details.",
+                                    "Operation failed!",
+                                    JOptionPane.ERROR_MESSAGE
+                            );
+                            askClearFiles.run();
+                        });
+                    } else {
+                        SwingUtilities.invokeLater(() -> {
+                            askClearFiles.run();
+                        });
                     }
                 }
             } finally {
@@ -667,7 +709,10 @@ public abstract class ProgressDialog extends javax.swing.JDialog {
                     this.logTextArea.append("Finished\n");
                     this.cancelButton.setEnabled(false);
                 });
-                this.errorCleanupActions.clear();
+
+                setFilename("Finished");
+                setFileSize(0);
+                updateFileStatus(true);
             }
         });
         this.thread.setDaemon(true);
@@ -680,7 +725,25 @@ public abstract class ProgressDialog extends javax.swing.JDialog {
         return this.thread != null;
     }
 
+    public void cancel() {
+        SwingUtilities.invokeLater(() -> {
+            if (this.thread != null && this.thread.isAlive()) {
+                this.thread.interrupt();
+                this.logTextArea.append("Sent interrupt signal\n");
+            }
+        });
+    }
+
     public abstract void run() throws Throwable;
+
+    public boolean isErrorCleanupEnabled() {
+        return false;
+    }
+
+    public void doErrorCleanup() throws Throwable {
+
+    }
+
 
     // Variables declaration - do not modify//GEN-BEGIN:variables
     private javax.swing.JButton cancelButton;

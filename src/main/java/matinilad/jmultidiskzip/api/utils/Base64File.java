@@ -26,6 +26,7 @@
  */
 package matinilad.jmultidiskzip.api.utils;
 
+import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
@@ -46,11 +47,16 @@ public class Base64File {
         return sampleHex.toLowerCase().startsWith(HEADER_HEX);
     }
     
-    public static InputStream decode(InputStream in) {
+    public static InputStream decode(InputStream in) throws IOException {
+        byte[] header = in.readNBytes(HEADER_HEX.length() / 2);
+        if (header.length != (HEADER_HEX.length() / 2) || !HexFormat.of().formatHex(header).equals(HEADER_HEX)) {
+            throw new IOException("Base64 header not found");
+        }
         return Base64.getDecoder().wrap(in);
     }
     
-    public static OutputStream encode(OutputStream out) {
+    public static OutputStream encode(OutputStream out) throws IOException {
+        out.write(Base64File.HEADER.getBytes(StandardCharsets.US_ASCII));
         return Base64.getEncoder().wrap(out);
     }
     

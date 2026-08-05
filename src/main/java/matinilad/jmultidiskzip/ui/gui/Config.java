@@ -24,7 +24,7 @@
  *
  * For more information, please refer to <https://unlicense.org>
  */
-package matinilad.jmultidiskzip.ui;
+package matinilad.jmultidiskzip.ui.gui;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -134,8 +134,50 @@ public class Config {
         return CONFIG.getProperty(property);
     }
     
+    public static int getInt(String property, int defaultValue) {
+        return Integer.parseInt(get(property, Integer.toString(defaultValue)));
+    }
+    
+    public static long getLong(String property, long defaultValue) {
+        return Long.parseLong(get(property, Long.toString(defaultValue)));
+    }
+    
+    public static String getNullEncoded(String property, String defaultValue) {
+        String value = get(property, defaultValue);
+        if (value == null || value.equalsIgnoreCase("NULL")) {
+            return null;
+        }
+        if (value.startsWith("VALUE@")) {
+            return value.substring("VALUE@".length());
+        }
+        return value;
+    }
+    
+    public static boolean getBoolean(String property, boolean defaultValue) {
+        return Boolean.parseBoolean(get(property, Boolean.toString(defaultValue)));
+    }
+    
     public static void set(String property, String value) {
         CONFIG.setProperty(property, value);
     }
     
+    public static void set(String property, int value) {
+        CONFIG.setProperty(property, Integer.toString(value));
+    }
+    
+    public static void set(String property, long value) {
+        CONFIG.setProperty(property, Long.toString(value));
+    }
+    
+    public static void setNullEncoded(String property, String value) {
+        if (value == null) {
+            set(property, "NULL");
+            return;
+        }
+        set(property, "VALUE@"+value);
+    }
+    
+    public static void set(String property, boolean value) {
+        CONFIG.setProperty(property, Boolean.toString(value));
+    }
 }

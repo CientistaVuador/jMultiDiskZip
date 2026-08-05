@@ -29,6 +29,7 @@ package matinilad.jmultidiskzip.api.utils;
 import java.io.FilterOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
+import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.security.InvalidAlgorithmParameterException;
 import java.security.InvalidKeyException;
@@ -125,6 +126,14 @@ public class EncryptedOutputStream extends FilterOutputStream {
             byte[] salt = new byte[32];
             new SecureRandom().nextBytes(salt);
             sha256.update(salt);
+            
+            //because a counter is being used as an IV, the whole
+            //security of this algorithm depends on the salt value
+            //being a unique (not random) value.
+            //adding a timestamp to the salt can avoid a severe
+            //security error even if the system rng fails completely.
+            long timestamp = System.currentTimeMillis();
+            sha256.update(ByteBuffer.allocate(8).putLong(timestamp).array());
             
             if (this.userSalt != null) {
                 sha256.update(this.userSalt);

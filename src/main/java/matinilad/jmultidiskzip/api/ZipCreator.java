@@ -104,6 +104,10 @@ public class ZipCreator {
     protected void onFileError(Path file, IOException reason) {
 
     }
+    
+    protected void onFileSuccess(Path file) {
+        
+    }
 
     private void init() throws IOException {
         if (this.hash != null) {
@@ -230,7 +234,7 @@ public class ZipCreator {
         if (isFile) {
             long fileSize = Files.size(file);
             long progress = 0;
-
+            
             onFileProgress(file, false, progress, fileSize);
             try (InputStream in = Files.newInputStream(file)) {
                 byte[] buffer = new byte[1 * 1024 * 1024];
@@ -242,7 +246,7 @@ public class ZipCreator {
 
                     this.output.write(buffer, 0, r);
                     progress += r;
-
+                    
                     onFileProgress(file, false, progress, fileSize);
                 }
             }
@@ -337,6 +341,8 @@ public class ZipCreator {
                     } catch (IOException ex) {
                         throw new UncheckedIOException(ex);
                     }
+                    
+                    onFileSuccess(e.getPath());
                 } catch (InterruptedException ex) {
                     throw new RuntimeException(ex);
                 }

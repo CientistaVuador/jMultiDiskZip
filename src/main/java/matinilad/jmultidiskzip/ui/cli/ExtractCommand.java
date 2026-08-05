@@ -250,7 +250,7 @@ public class ExtractCommand {
         }
     }
 
-    private static PartInputStream getPartStream(Scanner scanner, PrintStream out, Path partOne, boolean auto, boolean allowClose, List<String> extensions) {
+    private static PartInputStream getPartStream(Scanner scanner, PrintStream out, Path partOne, boolean auto, List<String> extensions) {
         extensions.remove(extensions.size() - 1);
         PartInputStream partStream = new PartInputStream(partOne) {
             private Path lastPart = null;
@@ -280,12 +280,10 @@ public class ExtractCommand {
                 while (path == null) {
                     out.println("Please insert the directory for the next part: " + requiredPart.getFileName().toString());
                     out.println("Leave empty to use current part directory");
-                    if (allowClose) {
-                        out.println("If no more parts are available, type //close to close the stream");
-                    }
+                    out.println("If no more parts are available, type //close to close the stream");
                     out.print("[Directory:]");
                     String input = scanner.nextLine();
-                    if (allowClose && input.equalsIgnoreCase("//close")) {
+                    if (input.equalsIgnoreCase("//close")) {
                         continueSignal(null, true);
                         return;
                     }
@@ -337,7 +335,6 @@ public class ExtractCommand {
 
         if (Base64File.isBase64File(magicHex)) {
             removeExtensionFromList(Base64File.EXTENSION, extensions);
-            pushback.readNBytes(Base64File.HEADER_HEX.length() / 2);
             return Base64File.decode(pushback);
         } else if (HexOutputStream.isHexFile(magicHex)) {
             removeExtensionFromList(HexOutputStream.EXTENSION, extensions);
@@ -468,7 +465,7 @@ public class ExtractCommand {
                 extensions.remove(0);
 
                 if (PartOutputStream.getPartNumber(partOne) != -1) {
-                    in = getPartStream(scanner, out, partOne, auto, noZip && !decrypt, extensions);
+                    in = getPartStream(scanner, out, partOne, auto, extensions);
                 } else {
                     in = new BufferedInputStream(Files.newInputStream(partOne));
                 }

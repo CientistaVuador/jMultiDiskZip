@@ -24,48 +24,12 @@
  *
  * For more information, please refer to <https://unlicense.org>
  */
-package matinilad.jmultidiskzip;
-
-import java.io.InputStream;
-import java.io.PrintStream;
-import java.util.Arrays;
-import matinilad.jmultidiskzip.ui.cli.CLInterface;
-import matinilad.jmultidiskzip.ui.gui.GUInterface;
+package matinilad.jmultidiskzip.ui.gui;
 
 /**
  *
  * @author Cien
  */
-public class Main {
-    
-    private static void printHelp(PrintStream out) {
-        out.println("Available Interfaces:");
-        out.println("-cli (Command line interface)");
-        out.println("-gui (Graphical user interface) [Default]");
-    }
-    
-    public static void main(String[] args) throws Exception {
-        InputStream in = System.in;
-        PrintStream out = System.out;
-        
-        if (args.length == 0) {
-            GUInterface.run();
-            return;
-        }
-        switch (args[0]) {
-            case "-cli" -> {
-                CLInterface.run(in, out, Arrays.copyOfRange(args, 1, args.length));
-            }
-            case "-gui" -> {
-                GUInterface.run();
-            }
-            default -> {
-                if (!args[0].equals("-help")) {
-                    out.println("Unknown Interface: "+args[0]);
-                }
-                printHelp(out);
-            }
-        }
-    }
+public class ExtractOperationSettings {
     
 }
