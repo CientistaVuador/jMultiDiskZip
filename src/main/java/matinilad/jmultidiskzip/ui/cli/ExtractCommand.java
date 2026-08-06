@@ -27,7 +27,6 @@
 package matinilad.jmultidiskzip.ui.cli;
 
 import java.io.BufferedInputStream;
-import java.io.BufferedOutputStream;
 import java.io.ByteArrayInputStream;
 import java.io.Console;
 import java.io.IOException;
@@ -40,10 +39,8 @@ import java.nio.charset.UnsupportedCharsetException;
 import java.nio.file.Files;
 import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HexFormat;
-import java.util.List;
 import java.util.Scanner;
 import java.util.zip.ZipInputStream;
 import matinilad.jmultidiskzip.api.utils.PartInputStream;
@@ -60,7 +57,6 @@ import matinilad.jmultidiskzip.api.utils.EncryptedOutputStream;
 import matinilad.jmultidiskzip.api.utils.HexInputStream;
 import matinilad.jmultidiskzip.api.utils.HexOutputStream;
 import matinilad.jmultidiskzip.api.utils.PartOutputStream;
-import matinilad.jmultidiskzip.api.utils.TempFileList;
 import matinilad.jmultidiskzip.ui.UIUtils;
 
 /**
@@ -79,7 +75,6 @@ public class ExtractCommand {
         out.println("-auto - Enables automatic mode, checks the part directory every few seconds instead of asking for a directory [NOT REQUIRED]");
         out.println("-verbose - Enables verbose output mode, otherwise only errors will be displayed [NOT REQUIRED]");
         out.println("-replaceFiles [yes/no/ask] - If files should be replaced or not [DEFAULT IS ASK]");
-        out.println("-noZip - No zip archives, passthrough only [NOT REQUIRED]");
     }
 
     public static void run(InputStream in, PrintStream out, String[] args) throws Exception {
@@ -102,7 +97,6 @@ public class ExtractCommand {
         boolean auto = false;
         boolean verbose = false;
         int replaceFiles = 0;
-        boolean noZip = false;
 
         for (int i = 0; i < args.length; i++) {
             String argument = args[i].toLowerCase();
@@ -130,10 +124,6 @@ public class ExtractCommand {
                 }
                 case "-verbose" -> {
                     verbose = true;
-                    continue;
-                }
-                case "-nozip" -> {
-                    noZip = true;
                     continue;
                 }
             }
@@ -228,19 +218,13 @@ public class ExtractCommand {
             }
         }
         
-        if (noZip && auto && !decrypt) {
-            out.println("auto mode cannot be combined with noZip without encryption");
-            return;
-        }
-
         try {
             extract(scanner,
                     out,
                     partOne,
                     outputDirectory,
                     verifyFiles, decrypt, zipInZip, auto, verbose,
-                    replaceFiles,
-                    noZip
+                    replaceFiles
             );
         } catch (IOException ex) {
             out.println("Operation failed!");
@@ -250,8 +234,7 @@ public class ExtractCommand {
         }
     }
 
-    private static PartInputStream getPartStream(Scanner scanner, PrintStream out, Path partOne, boolean auto, List<String> extensions) {
-        extensions.remove(extensions.size() - 1);
+    private static PartInputStream getPartStream(Scanner scanner, PrintStream out, Path partOne, boolean auto) {
         PartInputStream partStream = new PartInputStream(partOne) {
             private Path lastPart = null;
             private int retryTime = 2;
@@ -304,19 +287,7 @@ public class ExtractCommand {
         return partStream;
     }
 
-    private static boolean removeExtensionFromList(String extension, List<String> extensions) {
-        if (!extensions.isEmpty()) {
-            String last = extensions.get(extensions.size() - 1);
-            if (last.equalsIgnoreCase(extension)) {
-                extensions.remove(extensions.size() - 1);
-                return true;
-            }
-        }
-        return false;
-    }
-
-    private static ZipInputStream getZipInZip(InputStream in, Charset charset, List<String> extensions) throws IOException {
-        removeExtensionFromList(ZipCreator.EXTENSION, extensions);
+    private static ZipInputStream getZipInZip(InputStream in, Charset charset) throws IOException {
         ZipInputStream zip = new ZipInputStream(in, charset);
         if (zip.getNextEntry() == null) {
             throw new IOException("empty or corrupted zip file");
@@ -324,7 +295,7 @@ public class ExtractCommand {
         return zip;
     }
 
-    private static InputStream getFormatStream(InputStream in, List<String> extensions) throws IOException {
+    private static InputStream getFormatStream(InputStream in) throws IOException {
         HexFormat hex = HexFormat.of();
 
         byte[] magic = in.readNBytes(256);
@@ -334,19 +305,15 @@ public class ExtractCommand {
         pushback.unread(magic);
 
         if (Base64File.isBase64File(magicHex)) {
-            removeExtensionFromList(Base64File.EXTENSION, extensions);
             return Base64File.decode(pushback);
         } else if (HexOutputStream.isHexFile(magicHex)) {
-            removeExtensionFromList(HexOutputStream.EXTENSION, extensions);
             return new HexInputStream(pushback);
         }
 
         return pushback;
     }
 
-    private static EncryptedInputStream getEncryptedStream(PrintStream out, InputStream in, List<String> extensions) throws IOException {
-        removeExtensionFromList(EncryptedOutputStream.EXTENSION, extensions);
-
+    private static EncryptedInputStream getEncryptedStream(PrintStream out, InputStream in) throws IOException {
         byte[] sample = in.readNBytes(256);
 
         Console console = System.console();
@@ -384,7 +351,7 @@ public class ExtractCommand {
         }
     }
 
-    private static InputStream getCompressedStream(InputStream in, List<String> extensions) throws IOException {
+    private static InputStream getCompressedStream(InputStream in) throws IOException {
         byte[] magicBytes = in.readNBytes(32);
 
         PushbackInputStream pushBack = new PushbackInputStream(in, magicBytes.length);
@@ -394,11 +361,6 @@ public class ExtractCommand {
         CompressionAlgorithm compression = CompressionAlgorithmFactory.getDefault().fromMagicNumber(magic);
 
         if (compression != null) {
-            for (int i = 0; i < compression.getNumberOfExtensions(); i++) {
-                if (removeExtensionFromList(compression.getExtension(i), extensions)) {
-                    break;
-                }
-            }
             return compression.decompress(pushBack);
         }
         return pushBack;
@@ -443,8 +405,7 @@ public class ExtractCommand {
             boolean zipInZip,
             boolean auto,
             boolean verbose,
-            int replaceFiles,
-            boolean noZip
+            int replaceFiles
     ) throws IOException, InterruptedException {
         ZipExtractor extractor = null;
         try {
@@ -460,12 +421,8 @@ public class ExtractCommand {
             CountingInputStream countOut = null;
             InputStream in = null;
             try {
-                List<String> extensions = new ArrayList<>(Arrays.asList(partOne.getFileName().toString().split("\\.")));
-                String name = extensions.get(0);
-                extensions.remove(0);
-
                 if (PartOutputStream.getPartNumber(partOne) != -1) {
-                    in = getPartStream(scanner, out, partOne, auto, extensions);
+                    in = getPartStream(scanner, out, partOne, auto);
                 } else {
                     in = new BufferedInputStream(Files.newInputStream(partOne));
                 }
@@ -473,75 +430,16 @@ public class ExtractCommand {
                 in = countIn;
 
                 if (zipInZip) {
-                    in = getZipInZip(in, charset, extensions);
+                    in = getZipInZip(in, charset);
                 }
 
-                in = getFormatStream(in, extensions);
+                in = getFormatStream(in);
 
                 if (decrypt) {
-                    in = getEncryptedStream(out, in, extensions);
+                    in = getEncryptedStream(out, in);
                 }
 
-                in = getCompressedStream(in, extensions);
-
-                if (noZip) {
-                    TempFileList createdFiles = new TempFileList();
-                    try {
-                        try {
-                            String filename = name;
-                            for (int i = 0; i < extensions.size(); i++) {
-                                filename += "." + extensions.get(i);
-                            }
-
-                            Path outputFile = outputDirectory.resolve(filename);
-
-                            if (Files.exists(outputFile)) {
-                                if (replaceFiles == -1) {
-                                    out.println(outputFile.toString() + " already exists!");
-                                    return;
-                                } else if (replaceFiles == 0) {
-                                    out.println("Replace " + outputFile.toString() + " ?");
-                                    out.print("[Y/N:]");
-                                    String response = scanner.nextLine();
-                                    if (response == null || (!response.equalsIgnoreCase("y") && !response.equalsIgnoreCase("yes"))) {
-                                        out.println("Canceled");
-                                        return;
-                                    }
-                                }
-                            }
-
-                            createdFiles.createDirectories(outputDirectory);
-
-                            if (verbose) {
-                                out.println(outputFile.toString());
-                            }
-                            
-                            countOut = new CountingInputStream(in);
-                            in = countOut;
-
-                            try (BufferedOutputStream o = new BufferedOutputStream(createdFiles.newOutputStream(outputFile))) {
-                                byte[] buffer = new byte[1 * 1024 * 1024];
-                                int r;
-                                while ((r = in.read(buffer, 0, buffer.length)) != -1) {
-                                    o.write(buffer, 0, r);
-                                }
-                            }
-                        } finally {
-                            if (in != null) {
-                                in.close();
-                                in = null;
-                            }
-                        }
-                        if (verbose) {
-                            printFinalResultInformation(countIn, countOut, out);
-                        }
-                    } catch (Throwable t) {
-                        createdFiles.deleteFiles();
-                        throw t;
-                    }
-                    return;
-                }
-
+                in = getCompressedStream(in);
                 in = getVerifiedZipFileStream(in);
 
                 countOut = new CountingInputStream(in);

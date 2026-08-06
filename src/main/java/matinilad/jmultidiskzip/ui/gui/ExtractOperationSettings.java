@@ -32,4 +32,42 @@ package matinilad.jmultidiskzip.ui.gui;
  */
 public class ExtractOperationSettings {
     
+    private boolean noVerifyEnabled = false;
+    private boolean zipInZipEnabled = false;
+    
+    public ExtractOperationSettings() {
+        
+    }
+    
+    public ExtractOperationSettings(ExtractOperationSettings settings) {
+        this.noVerifyEnabled = settings.noVerifyEnabled;
+        this.zipInZipEnabled = settings.zipInZipEnabled;
+    }
+
+    public boolean isNoVerifyEnabled() {
+        return noVerifyEnabled;
+    }
+
+    public void setNoVerifyEnabled(boolean noVerifyEnabled) {
+        this.noVerifyEnabled = noVerifyEnabled;
+    }
+
+    public boolean isZipInZipEnabled() {
+        return zipInZipEnabled;
+    }
+
+    public void setZipInZipEnabled(boolean zipInZipEnabled) {
+        this.zipInZipEnabled = zipInZipEnabled;
+    }
+
+    public void save() {
+        Config.set("extract.noVerifyEnabled", this.noVerifyEnabled);
+        Config.set("extract.zipInZipEnabled", this.zipInZipEnabled);
+    }
+    
+    public void load() {
+        setNoVerifyEnabled(Config.getBoolean("extract.noVerifyEnabled", this.noVerifyEnabled));
+        setZipInZipEnabled(Config.getBoolean("extract.zipInZipEnabled", this.zipInZipEnabled));
+    }
+    
 }

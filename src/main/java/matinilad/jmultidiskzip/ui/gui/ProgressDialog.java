@@ -65,6 +65,7 @@ public abstract class ProgressDialog extends javax.swing.JDialog {
     private int errors = 0;
 
     private Thread thread = null;
+    private boolean sentInterruptSignal = false;
 
     public ProgressDialog(java.awt.Frame parent, boolean modal) {
         super(parent, modal);
@@ -385,20 +386,26 @@ public abstract class ProgressDialog extends javax.swing.JDialog {
                 "Are you sure you want to cancel the operation?",
                 "Cancel operation",
                 JOptionPane.YES_NO_OPTION,
-                JOptionPane.INFORMATION_MESSAGE
+                JOptionPane.QUESTION_MESSAGE
         );
     }
 
     private void cancelButtonActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_cancelButtonActionPerformed
-        if (showCancelWindow() == JOptionPane.YES_OPTION) {
+        if (!this.sentInterruptSignal) {
+            if (showCancelWindow() == JOptionPane.YES_OPTION) {
+                cancel();
+            }
+        } else {
             cancel();
         }
     }//GEN-LAST:event_cancelButtonActionPerformed
 
     private void formWindowClosing(java.awt.event.WindowEvent evt) {//GEN-FIRST:event_formWindowClosing
         if (this.cancelButton.isEnabled()) {
-            if (showCancelWindow() != JOptionPane.YES_OPTION) {
-                return;
+            if (!this.sentInterruptSignal) {
+                if (showCancelWindow() != JOptionPane.YES_OPTION) {
+                    return;
+                }
             }
             cancel();
         }
@@ -730,6 +737,7 @@ public abstract class ProgressDialog extends javax.swing.JDialog {
             if (this.thread != null && this.thread.isAlive()) {
                 this.thread.interrupt();
                 this.logTextArea.append("Sent interrupt signal\n");
+                this.sentInterruptSignal = true;
             }
         });
     }

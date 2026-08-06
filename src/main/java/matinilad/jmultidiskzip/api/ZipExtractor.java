@@ -94,11 +94,15 @@ public class ZipExtractor {
     }
 
     protected void onFileError(Path file, IOException reason) {
-
+        
     }
 
-    protected boolean onShouldReplaceFile(Path file, long expectedSize) {
+    protected boolean onShouldReplaceFile(Path file, long expectedSize) throws InterruptedException {
         return true;
+    }
+    
+    protected void onFileSuccess(Path file) {
+        
     }
 
     private void addFallbackChecksum(ZipOutputStream out, ZipEntry entry) throws IOException {
@@ -179,6 +183,8 @@ public class ZipExtractor {
                         onFileError(entryPath, new IOException("failed to set directory timestamps", ex));
                     }
                 });
+                
+                onFileSuccess(entryPath);
                 continue;
             }
 
@@ -190,8 +196,8 @@ public class ZipExtractor {
             }
             
             if (Files.exists(entryPath)) {
-                if (Files.isDirectory(entryPath)) {
-                    onFileError(entryPath, new IOException("path is a directory"));
+                if (!Files.isRegularFile(entryPath)) {
+                    onFileError(entryPath, new IOException("path is not a file"));
                     continue;
                 }
                 if (!onShouldReplaceFile(entryPath, entry.getSize())) {
@@ -214,7 +220,10 @@ public class ZipExtractor {
 
                         out.write(buffer, 0, r);
                         count += r;
-                        onFileProgress(entryPath, count, fileSize);
+                        
+                        if (r != 0) {
+                            onFileProgress(entryPath, count, fileSize);
+                        }
                     }
                 }
 
@@ -224,8 +233,14 @@ public class ZipExtractor {
                 }
                 view.setTimes(modified, access, created);
             } catch (IOException ex) {
+                if (ex.getCause() instanceof InterruptedException) {
+                    throw ex;
+                }
                 onFileError(entryPath, ex);
+                continue;
             }
+            
+            onFileSuccess(entryPath);
         }
 
         for (int i = (directoryTimestamps.size() - 1); i >= 0; i--) {

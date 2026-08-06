@@ -40,6 +40,7 @@ import java.util.zip.ZipOutputStream;
 import javax.swing.JOptionPane;
 import javax.swing.SwingUtilities;
 import matinilad.jmultidiskzip.api.ZipCreator;
+import matinilad.jmultidiskzip.api.checksum.ChecksumAlgorithm;
 import matinilad.jmultidiskzip.api.utils.Base64File;
 import matinilad.jmultidiskzip.api.utils.CountingOutputStream;
 import matinilad.jmultidiskzip.api.utils.EncryptedOutputStream;
@@ -153,7 +154,12 @@ public class CreateOperation extends ProgressDialog {
                     protected void onFileProgress(Path file, boolean crc, long currentBytes, long totalBytes) {
                         if (currentBytes == 0) {
                             if (crc) {
-                                setFilename("(CRC) " + file.toString());
+                                ChecksumAlgorithm h = getHash();
+                                if (h == null) {
+                                    setFilename("(CRC32) " + file.toString());
+                                } else {
+                                    setFilename("(CRC32/"+h.getName()+") " + file.toString());
+                                }
                             } else {
                                 setFilename(file.toString());
                             }
