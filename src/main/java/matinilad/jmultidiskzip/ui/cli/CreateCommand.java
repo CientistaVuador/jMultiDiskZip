@@ -52,7 +52,6 @@ import matinilad.jmultidiskzip.api.utils.CountingOutputStream;
 import matinilad.jmultidiskzip.api.utils.EncryptedOutputStream;
 import matinilad.jmultidiskzip.api.utils.HexOutputStream;
 import matinilad.jmultidiskzip.api.utils.OutputFormat;
-import matinilad.jmultidiskzip.api.utils.Utils;
 import matinilad.jmultidiskzip.ui.UIUtils;
 
 /**
@@ -380,7 +379,7 @@ public class CreateCommand {
         } else if (format.equals("base64")) {
             outputFormat = OutputFormat.BASE64;
         }
-        outputFile = Utils.validateOutputFileExtension(outputFile, encrypt, compression, outputFormat);
+        outputFile = UIUtils.validatePartFileExtension(outputFile, encrypt, compression, outputFormat);
 
         if (Files.exists(outputFile)) {
             if (replaceFiles == -1) {

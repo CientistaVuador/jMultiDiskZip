@@ -26,14 +26,27 @@
  */
 package matinilad.jmultidiskzip.ui.gui;
 
+import java.awt.Desktop;
+import java.io.File;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
+import javax.swing.JOptionPane;
+import matinilad.jmultidiskzip.api.checksum.ChecksumAlgorithm;
+import matinilad.jmultidiskzip.api.checksum.ChecksumAlgorithmFactory;
+import matinilad.jmultidiskzip.api.utils.PartOutputStream;
+import matinilad.jmultidiskzip.api.utils.TempFileList;
+
 /**
  *
  * @author Cien
  */
 public class MainWindow extends javax.swing.JFrame {
-    
+
     private static final long serialVersionUID = 1L;
-    
+
     /**
      * Creates new form MainWindow
      */
@@ -49,46 +62,92 @@ public class MainWindow extends javax.swing.JFrame {
     // <editor-fold defaultstate="collapsed" desc="Generated Code">//GEN-BEGIN:initComponents
     private void initComponents() {
 
-        jTabbedPane1 = new javax.swing.JTabbedPane();
-        jPanel1 = new javax.swing.JPanel();
-        jPanel2 = new javax.swing.JPanel();
+        dragAndDropPanel = new javax.swing.JPanel();
+        jLabel1 = new javax.swing.JLabel();
         jMenuBar1 = new javax.swing.JMenuBar();
         jMenu1 = new javax.swing.JMenu();
-        jMenu2 = new javax.swing.JMenu();
+        createButton = new javax.swing.JMenuItem();
+        extractButton = new javax.swing.JMenuItem();
+        editButton = new javax.swing.JMenu();
+        settingsButton = new javax.swing.JMenuItem();
+        jMenu3 = new javax.swing.JMenu();
+        aboutButton = new javax.swing.JMenuItem();
 
         setDefaultCloseOperation(javax.swing.WindowConstants.EXIT_ON_CLOSE);
+        setTitle(Config.name()+" "+Config.version());
+        setMinimumSize(new java.awt.Dimension(300, 200));
 
-        javax.swing.GroupLayout jPanel1Layout = new javax.swing.GroupLayout(jPanel1);
-        jPanel1.setLayout(jPanel1Layout);
-        jPanel1Layout.setHorizontalGroup(
-            jPanel1Layout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
-            .addGap(0, 388, Short.MAX_VALUE)
-        );
-        jPanel1Layout.setVerticalGroup(
-            jPanel1Layout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
-            .addGap(0, 230, Short.MAX_VALUE)
-        );
+        this.dragAndDropPanel.setTransferHandler(new FileDragAndDrop() {
+            @Override
+            public boolean process(List<File> files) {
+                auto(files.stream().map(File::toPath).toList());
+                return true;
+            }
+        });
 
-        jTabbedPane1.addTab("Create", jPanel1);
+        jLabel1.setHorizontalAlignment(javax.swing.SwingConstants.CENTER);
+        jLabel1.setText("Drag and drop files here for faster use");
 
-        javax.swing.GroupLayout jPanel2Layout = new javax.swing.GroupLayout(jPanel2);
-        jPanel2.setLayout(jPanel2Layout);
-        jPanel2Layout.setHorizontalGroup(
-            jPanel2Layout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
-            .addGap(0, 388, Short.MAX_VALUE)
+        javax.swing.GroupLayout dragAndDropPanelLayout = new javax.swing.GroupLayout(dragAndDropPanel);
+        dragAndDropPanel.setLayout(dragAndDropPanelLayout);
+        dragAndDropPanelLayout.setHorizontalGroup(
+            dragAndDropPanelLayout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
+            .addGroup(dragAndDropPanelLayout.createSequentialGroup()
+                .addContainerGap(195, Short.MAX_VALUE)
+                .addComponent(jLabel1)
+                .addContainerGap(195, Short.MAX_VALUE))
         );
-        jPanel2Layout.setVerticalGroup(
-            jPanel2Layout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
-            .addGap(0, 230, Short.MAX_VALUE)
+        dragAndDropPanelLayout.setVerticalGroup(
+            dragAndDropPanelLayout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
+            .addGroup(dragAndDropPanelLayout.createSequentialGroup()
+                .addContainerGap(175, Short.MAX_VALUE)
+                .addComponent(jLabel1)
+                .addContainerGap(175, Short.MAX_VALUE))
         );
-
-        jTabbedPane1.addTab("Extract", jPanel2);
 
         jMenu1.setText("File");
+
+        createButton.setText("Create");
+        createButton.addActionListener(new java.awt.event.ActionListener() {
+            public void actionPerformed(java.awt.event.ActionEvent evt) {
+                createButtonActionPerformed(evt);
+            }
+        });
+        jMenu1.add(createButton);
+
+        extractButton.setText("Extract");
+        extractButton.addActionListener(new java.awt.event.ActionListener() {
+            public void actionPerformed(java.awt.event.ActionEvent evt) {
+                extractButtonActionPerformed(evt);
+            }
+        });
+        jMenu1.add(extractButton);
+
         jMenuBar1.add(jMenu1);
 
-        jMenu2.setText("Edit");
-        jMenuBar1.add(jMenu2);
+        editButton.setText("Edit");
+
+        settingsButton.setText("Settings");
+        settingsButton.addActionListener(new java.awt.event.ActionListener() {
+            public void actionPerformed(java.awt.event.ActionEvent evt) {
+                settingsButtonActionPerformed(evt);
+            }
+        });
+        editButton.add(settingsButton);
+
+        jMenuBar1.add(editButton);
+
+        jMenu3.setText("Help");
+
+        aboutButton.setText("About");
+        aboutButton.addActionListener(new java.awt.event.ActionListener() {
+            public void actionPerformed(java.awt.event.ActionEvent evt) {
+                aboutButtonActionPerformed(evt);
+            }
+        });
+        jMenu3.add(aboutButton);
+
+        jMenuBar1.add(jMenu3);
 
         setJMenuBar(jMenuBar1);
 
@@ -98,26 +157,180 @@ public class MainWindow extends javax.swing.JFrame {
             layout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
             .addGroup(layout.createSequentialGroup()
                 .addContainerGap()
-                .addComponent(jTabbedPane1)
+                .addComponent(dragAndDropPanel, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, Short.MAX_VALUE)
                 .addContainerGap())
         );
         layout.setVerticalGroup(
             layout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
             .addGroup(layout.createSequentialGroup()
                 .addContainerGap()
-                .addComponent(jTabbedPane1)
+                .addComponent(dragAndDropPanel, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, Short.MAX_VALUE)
                 .addContainerGap())
         );
 
         pack();
     }// </editor-fold>//GEN-END:initComponents
-    
+
+    private void createButtonActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_createButtonActionPerformed
+        CreateDialog dialog = new CreateDialog(this, true);
+        dialog.setVisible(true);
+    }//GEN-LAST:event_createButtonActionPerformed
+
+    private void extractButtonActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_extractButtonActionPerformed
+        ExtractDialog dialog = new ExtractDialog(this, true);
+        dialog.setVisible(true);
+    }//GEN-LAST:event_extractButtonActionPerformed
+
+    private void aboutButtonActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_aboutButtonActionPerformed
+        AboutDialog dialog = new AboutDialog(this, true);
+        dialog.setVisible(true);
+    }//GEN-LAST:event_aboutButtonActionPerformed
+
+    private void settingsButtonActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_settingsButtonActionPerformed
+        SettingsDialog dialog = new SettingsDialog(this, true);
+        dialog.setVisible(true);
+    }//GEN-LAST:event_settingsButtonActionPerformed
+
+    private void auto(List<Path> files) {
+        List<Path> filtered = new ArrayList<>();
+        for (Path e : files) {
+            Path filenamePath = e.getFileName();
+            if (filenamePath != null) {
+                String filename = filenamePath.toString();
+                String[] extensions = filename.split("\\.");
+                String last = extensions[extensions.length - 1];
+                ChecksumAlgorithm algo = ChecksumAlgorithmFactory.getDefault().fromExtension(last);
+                if (algo != null) {
+                    String pathString = e.toString();
+                    filtered.add(e.getFileSystem().getPath(pathString.substring(0, pathString.length() - (1 + last.length()))));
+                } else {
+                    filtered.add(e);
+                }
+            } else {
+                filtered.add(e);
+            }
+        }
+        List<Path> refiltered = new ArrayList<>();
+        for (Path e : filtered) {
+            if (PartOutputStream.getPartNumber(e) != -1) {
+                Path first = PartOutputStream.getFirstPart(e);
+                if (!refiltered.contains(first)) {
+                    refiltered.add(first);
+                }
+            } else {
+                refiltered.add(e);
+            }
+        }
+        if (refiltered.size() == 1) {
+            Path first = refiltered.get(0);
+            if (PartOutputStream.getPartNumber(first) == 1) {
+                if (Files.isRegularFile(first)) {
+                    extractAuto(first);
+                    return;
+                }
+            }
+        }
+        createAuto(files);
+    }
+
+    private Path getDirectory(Path file) {
+        String name = Config.name() + " " + Long.toHexString(System.currentTimeMillis()).toUpperCase();
+
+        Path bestDirectory = null;
+        if (file != null && file.getParent() != null) {
+            bestDirectory = file.getParent().resolve(name);
+        }
+        Path fallbackDirectory = Path.of(System.getProperty("user.home")).resolve(name);
+
+        if (bestDirectory != null && !Files.exists(bestDirectory)) {
+            TempFileList list = new TempFileList();
+            try {
+                list.createDirectories(bestDirectory);
+                if (!Files.isDirectory(bestDirectory)) {
+                    throw new IOException();
+                }
+                return bestDirectory;
+            } catch (IOException ex) {
+                //ignore
+            } finally {
+                list.deleteFiles();
+            }
+        }
+
+        return fallbackDirectory;
+    }
+
+    private void extractAuto(Path input) {
+        Path output = getDirectory(input);
+
+        boolean encrypted = false;
+        if (input.getFileName().toString().toLowerCase().contains(".bin")) {
+            int result = JOptionPane.showConfirmDialog(
+                    this,
+                    "Is \n'" + input + "'\nencrypted?",
+                    "Confirm",
+                    JOptionPane.YES_NO_OPTION,
+                    JOptionPane.QUESTION_MESSAGE
+            );
+            if (result == JOptionPane.YES_OPTION) {
+                encrypted = true;
+            }
+        }
+        
+        ExtractDialog dialog = new ExtractDialog(this, true);
+        dialog.auto(input, output, encrypted);
+        dialog.setVisible(true);
+
+        if (Files.isDirectory(output)) {
+            try {
+                Desktop.getDesktop().open(output.toFile());
+            } catch (IOException ex) {
+                //ignore
+            }
+        }
+    }
+
+    private void createAuto(List<Path> input) {
+        Path directory = getDirectory(input.get(0));
+        String name = Config.name();
+        for (Path e:input) {
+            if (input.size() == 1 && e.getFileName() != null) {
+                name = e.getFileName().toString();
+                break;
+            }
+            if (e.getParent() != null) {
+                Path parent = e.getParent();
+                if (parent.getFileName() != null) {
+                    name = parent.getFileName().toString();
+                    break;
+                }
+            }
+        }
+        Path output = directory.resolve(name);
+        
+        CreateDialog dialog = new CreateDialog(this, true);
+        dialog.auto(input.toArray(Path[]::new), output);
+        dialog.setVisible(true);
+        
+        if (Files.isDirectory(directory)) {
+            try {
+                Desktop.getDesktop().open(directory.toFile());
+            } catch (IOException ex) {
+                //ignore
+            }
+        }
+    }
+
     // Variables declaration - do not modify//GEN-BEGIN:variables
+    private javax.swing.JMenuItem aboutButton;
+    private javax.swing.JMenuItem createButton;
+    private javax.swing.JPanel dragAndDropPanel;
+    private javax.swing.JMenu editButton;
+    private javax.swing.JMenuItem extractButton;
+    private javax.swing.JLabel jLabel1;
     private javax.swing.JMenu jMenu1;
-    private javax.swing.JMenu jMenu2;
+    private javax.swing.JMenu jMenu3;
     private javax.swing.JMenuBar jMenuBar1;
-    private javax.swing.JPanel jPanel1;
-    private javax.swing.JPanel jPanel2;
-    private javax.swing.JTabbedPane jTabbedPane1;
+    private javax.swing.JMenuItem settingsButton;
     // End of variables declaration//GEN-END:variables
 }

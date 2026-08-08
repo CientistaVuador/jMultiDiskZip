@@ -127,6 +127,14 @@ public class Config {
         Runtime.getRuntime().addShutdownHook(saveConfig);
     }
     
+    public static String name() {
+        return CONFIG.getProperty("program.name", "jmultidiskzip_fallback");
+    }
+    
+    public static String version() {
+        return CONFIG.getProperty("program.version", "0.0.0_fallback");
+    }
+    
     public static String get(String property) {
         return CONFIG.getProperty(property);
     }

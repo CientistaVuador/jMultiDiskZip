@@ -66,6 +66,8 @@ public abstract class ProgressDialog extends javax.swing.JDialog {
 
     private Thread thread = null;
     private boolean sentInterruptSignal = false;
+    
+    private boolean closeAfterFinishEnabled = false;
 
     public ProgressDialog(java.awt.Frame parent, boolean modal) {
         super(parent, modal);
@@ -81,6 +83,14 @@ public abstract class ProgressDialog extends javax.swing.JDialog {
         setLocationRelativeTo(dialog);
     }
 
+    public void setCloseAfterFinishEnabled(boolean closeAfterFinishEnabled) {
+        this.closeAfterFinishEnabled = closeAfterFinishEnabled;
+    }
+
+    public boolean isCloseAfterFinishEnabled() {
+        return closeAfterFinishEnabled;
+    }
+    
     private void guiSetFilename(String name) {
         this.filenameField.setText(name);
     }
@@ -720,6 +730,13 @@ public abstract class ProgressDialog extends javax.swing.JDialog {
                 setFilename("Finished");
                 setFileSize(0);
                 updateFileStatus(true);
+                
+                SwingUtilities.invokeLater(() -> {
+                    if (isCloseAfterFinishEnabled() && getErrors() == 0) {
+                        setVisible(false);
+                        dispose();
+                    }
+                });
             }
         });
         this.thread.setDaemon(true);

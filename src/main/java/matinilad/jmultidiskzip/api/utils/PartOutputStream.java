@@ -43,77 +43,148 @@ import matinilad.jmultidiskzip.api.checksum.ChecksumAlgorithm;
 public class PartOutputStream extends OutputStream {
 
     public static final String EXTENSION = "001";
-
-    public static final int getPartNumber(Path file) {
-        if (file == null) {
-            return -1;
+    
+    private static String reverse(String s) {
+        StringBuilder b = new StringBuilder();
+        for (int i = (s.length() - 1); i >= 0; i--) {
+            b.append(s.charAt(i));
         }
-        Path filenamePath = file.getFileName();
+        return b.toString();
+    }
+    
+    private static String[] split(String filename) {
+        String[] split = reverse(filename).split("\\.", 2);
+        String name = reverse(split[split.length - 1]);
+        String extension = null;
+        if (split.length > 1) {
+            extension = reverse(split[0]);
+        }
+        return new String[] {name, extension};
+    }
+    
+    private static int getPartNumber(String extension) {
+        int partNumber;
+        if (extension != null) {
+            try {
+                partNumber = Integer.parseInt(extension);
+                if (partNumber <= 0) {
+                    partNumber = -1;
+                }
+            } catch (NumberFormatException ex) {
+                partNumber = -1;
+            }
+        } else {
+            partNumber = -1;
+        }
+        return partNumber;
+    }
+    
+    private static String getPartExtension(String extension, int oldPartNumber, int newPartNumber) {
+        int leadingZeros = 3;
+        if (oldPartNumber != -1) {
+            String old = Integer.toString(oldPartNumber);
+            leadingZeros = Math.min(leadingZeros, old.length());
+            if (old.length() != extension.length()) {
+                leadingZeros = extension.length();
+            }
+        }
+        String newNumber = Integer.toString(newPartNumber);
+        return "0".repeat(Math.max(leadingZeros - newNumber.length(), 0)) + newNumber;
+    }
+    
+    private static Path resolve(Path oldPath, String name, String extension) {
+        Path parent = oldPath.getParent();
+        if (parent == null) {
+            return oldPath.getFileSystem().getPath(name+"."+extension);
+        }
+        return parent.resolve(name+"."+extension);
+    }
+    
+    public static Path getFirstPart(Path part) {
+        if (part == null) {
+            throw new NullPointerException("part is null");
+        }
+        Path filenamePath = part.getFileName();
+        if (filenamePath == null) {
+            throw new IllegalArgumentException("no filename: "+part.toString());
+        }
+        String filename = filenamePath.toString();
+        
+        String[] split = split(filename);
+        String name = split[0];
+        String extension = split[1];
+        
+        int partNumber = getPartNumber(extension);
+        if (partNumber == 1) {
+            return part;
+        }
+        if (partNumber == -1 && extension != null) {
+            name += "." + extension;
+            extension = null;
+        }
+        extension = getPartExtension(extension, partNumber, 1);
+        
+        return resolve(part, name, extension);
+    }
+    
+    public static Path getNextPart(Path part) {
+        if (part == null) {
+            throw new NullPointerException("part is null");
+        }
+        Path filenamePath = part.getFileName();
+        if (filenamePath == null) {
+            throw new IllegalArgumentException("no filename: "+part.toString());
+        }
+        String filename = filenamePath.toString();
+        
+        String[] split = split(filename);
+        String name = split[0];
+        String extension = split[1];
+        
+        int partNumber = getPartNumber(extension);
+        if (partNumber == -1 && extension != null) {
+            name += "." + extension;
+            extension = null;
+        }
+        extension = getPartExtension(extension, partNumber, (partNumber == -1 ? 1 : partNumber + 1));
+        
+        return resolve(part, name, extension);
+    }
+    
+    public static int getPartNumber(Path part) {
+        if (part == null) {
+            throw new NullPointerException("part is null");
+        }
+        Path filenamePath = part.getFileName();
         if (filenamePath == null) {
             return -1;
         }
-        String[] extensions = filenamePath.toString().split("\\.");
-        if (extensions.length <= 1) {
-            return -1;
-        }
-        String last = extensions[extensions.length - 1];
-        try {
-            int result = Integer.parseInt(last);
-            if (result < 0) {
-                return -1;
-            }
-            return result;
-        } catch (NumberFormatException ex) {
-            return -1;
-        }
+        return getPartNumber(split(filenamePath.toString())[1]);
     }
-
-    private final Path directory;
-    private final String name;
-    private final int leadingZeros;
-
+    
     private final long partSize;
     private final ChecksumAlgorithm hashAlgorithm;
     private final Checksum digest;
     private final TempFileList createdFiles = new TempFileList();
     
+    private Path currentPart = null;
     private OutputStream output = null;
     private long count = 0;
-    private int partNumber = 0;
-    private String partString = "";
-
+    
     private boolean closed = false;
 
     public PartOutputStream(Path partOne, long partSize, ChecksumAlgorithm hashAlgorithm) {
-        Object[] pathData = PartInputStream.splitPathData(partOne);
-
-        this.directory = (Path) pathData[0];
-        this.name = (String) pathData[1];
-        this.leadingZeros = (int) pathData[2];
-
-        int number = (int) pathData[3];
-        if (number != 1) {
-            throw new IllegalArgumentException("Part number must be 1! Found: " + number);
-        }
-
-        if (partSize < 1) {
-            throw new IllegalArgumentException("part size < 1");
-        }
-
+        this.currentPart = getFirstPart(partOne);
         this.partSize = partSize;
         this.hashAlgorithm = hashAlgorithm;
-
+        
         if (this.hashAlgorithm != null) {
             this.digest = hashAlgorithm.newChecksum();
         } else {
             this.digest = null;
         }
     }
-
-    private Path createFile(String suffix) {
-        return this.directory.resolve(this.name + suffix);
-    }
-
+    
     private void closePart() throws IOException {
         if (this.output != null) {
             this.output.close();
@@ -121,23 +192,19 @@ public class PartOutputStream extends OutputStream {
             this.count = 0;
 
             if (this.digest != null) {
-                Path checksumFile = createFile(this.partString + "." + this.hashAlgorithm.getExtension(0));
+                Path checksumFile = this.currentPart.getFileSystem().getPath(this.currentPart.toString()+"."+this.hashAlgorithm.getExtension(0));
                 Files.writeString(checksumFile, HexFormat.of().formatHex(this.digest.digest()), StandardCharsets.UTF_8);
                 
                 this.createdFiles.addFile(checksumFile);
             }
+            
+            this.currentPart = getNextPart(this.currentPart);
         }
     }
 
     private void nextPart() throws IOException {
         closePart();
-
-        this.partNumber++;
-
-        this.partString = Integer.toString(this.partNumber);
-        this.partString = "." + "0".repeat(Math.max(this.leadingZeros - this.partString.length(), 0)) + this.partString;
-        
-        this.output = new BufferedOutputStream(this.createdFiles.newOutputStream(createFile(this.partString)));
+        this.output = new BufferedOutputStream(this.createdFiles.newOutputStream(this.currentPart));
     }
 
     @Override

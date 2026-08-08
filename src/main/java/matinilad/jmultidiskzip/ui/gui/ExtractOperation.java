@@ -75,12 +75,12 @@ public class ExtractOperation extends ProgressDialog {
 
     public ExtractOperation(ExtractOperationData inputData, Frame parent, boolean modal) {
         super(parent, modal);
-        this.inputData = Objects.requireNonNull(inputData, "inputData is null");
+        this.inputData = new ExtractOperationData(inputData);
     }
 
     public ExtractOperation(ExtractOperationData inputData, Dialog parent, boolean modal) {
         super(parent, modal);
-        this.inputData = Objects.requireNonNull(inputData, "inputData is null");
+        this.inputData = new ExtractOperationData(inputData);
     }
 
     @Override

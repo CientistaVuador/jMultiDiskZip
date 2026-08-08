@@ -28,7 +28,7 @@ package matinilad.jmultidiskzip.ui.gui;
 
 import java.nio.file.Path;
 import java.util.Arrays;
-import matinilad.jmultidiskzip.api.utils.Utils;
+import matinilad.jmultidiskzip.ui.UIUtils;
 
 /**
  *
@@ -47,7 +47,7 @@ public class CreateOperationData {
             throw new IllegalArgumentException("empty password");
         }
         this.settings = new CreateOperationSettings(settings);
-        this.output = Utils.validateOutputFileExtension(output, password != null, settings.getCompression(), settings.getOutputFormat());
+        this.output = UIUtils.validatePartFileExtension(output, password != null, settings.getCompression(), settings.getOutputFormat());
         this.input = input.clone();
         this.userSalt = (userSalt == null ? null : userSalt.clone());
         this.password = (password == null ? null : password.clone());

@@ -38,13 +38,9 @@ public class GUInterface {
     public static void run() {
         SwingUtilities.invokeLater(() -> {
             FlatDarkLaf.setup();
-
+            
             MainWindow mainWindow = new MainWindow();
             mainWindow.setVisible(true);
-            
-            SettingsDialog dialog = new SettingsDialog(mainWindow, true);
-            dialog.selectExtractTab();
-            dialog.setVisible(true);
         });
     }
 

@@ -34,8 +34,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.util.HexFormat;
-import java.util.Objects;
-import java.util.regex.Pattern;
 import matinilad.jmultidiskzip.api.checksum.Checksum;
 import matinilad.jmultidiskzip.api.checksum.ChecksumAlgorithm;
 import matinilad.jmultidiskzip.api.checksum.ChecksumAlgorithmFactory;
@@ -45,67 +43,25 @@ import matinilad.jmultidiskzip.api.checksum.ChecksumAlgorithmFactory;
  * @author Cien
  */
 public class PartInputStream extends InputStream {
-
-    protected static Object[] splitPathData(Path part) {
-        Objects.requireNonNull(part, "part path is null");
-        
-        part = part.toAbsolutePath();
-        
-        Path fileName = part.getFileName();
-        if (fileName == null) {
-            throw new IllegalArgumentException("part path has no name");
-        }
-        String fileNameString = fileName.toString();
-
-        String[] fileNameExtensions = fileNameString.split(Pattern.quote("."));
-        if (fileNameExtensions.length <= 1) {
-            throw new IllegalArgumentException("part path has no extensions");
-        }
-        String extension = fileNameExtensions[fileNameExtensions.length - 1];
-        int partNumber = Integer.parseInt(extension);
-        int leadingZeros = extension.length() - Integer.toString(partNumber).length();
-        if (leadingZeros != 0) {
-            leadingZeros = extension.length();
-        }
-
-        return new Object[]{
-            part.getParent(),
-            fileNameString.substring(0, fileNameString.length() - (extension.length() + 1)),
-            leadingZeros,
-            partNumber
-        };
-    }
     
     private final Object lock = new Object();
     private volatile boolean waitingForSignal = false;
     private volatile Path nextDirectory = null;
     private volatile boolean nextCloseStream = false;
 
-    private Path directory = null;
-    private final String name;
-    private final int leadingZeros;
-
-    private int partNumber = 0;
+    private Path currentPart = null;
     private InputStream partStream = null;
 
     private byte[] partHash = null;
     private Checksum partDigest = null;
 
+    private boolean streamClosed = false;
     private boolean closed = false;
 
     public PartInputStream(Path partOne) {
-        Object[] pathData = splitPathData(partOne);
-
-        this.directory = (Path) pathData[0];
-        this.name = (String) pathData[1];
-        this.leadingZeros = (int) pathData[2];
-
-        int number = (int) pathData[3];
-        if (number != 1) {
-            throw new IllegalArgumentException("Part number must be 1! Found: " + number);
-        }
+        this.currentPart = PartOutputStream.getFirstPart(partOne);
     }
-
+    
     public void continueSignal(Path newDirectory, boolean closeStream) {
         synchronized (this.lock) {
             if (!this.waitingForSignal) {
@@ -131,17 +87,18 @@ public class PartInputStream extends InputStream {
                     this.partDigest.update(buffer, 0, r);
                 }
             }
-
+            
             byte[] resultHash = this.partDigest.digest();
             if (!MessageDigest.isEqual(resultHash, this.partHash)) {
                 HexFormat hex = HexFormat.of();
-                throw new IOException("checksum failed for part " + this.partNumber + ", expected " + hex.formatHex(this.partHash) + " found " + hex.formatHex(resultHash));
+                throw new IOException("checksum failed for part " + this.currentPart + ", expected " + hex.formatHex(this.partHash) + " found " + hex.formatHex(resultHash));
             }
         }
 
         if (this.partStream != null) {
             this.partStream.close();
             this.partStream = null;
+            this.currentPart = PartOutputStream.getNextPart(this.currentPart);
         }
         this.partHash = null;
         this.partDigest = null;
@@ -150,12 +107,7 @@ public class PartInputStream extends InputStream {
     private boolean nextPart() throws IOException {
         closePart();
 
-        this.partNumber++;
-
-        String partString = Integer.toString(this.partNumber);
-        partString = "." + "0".repeat(Math.max(this.leadingZeros - partString.length(), 0)) + partString;
-
-        Path partFile = this.directory.resolve(this.name + partString);
+        Path partFile = this.currentPart;
         if (!Files.isReadable(partFile)) {
             do {
                 boolean closeStream;
@@ -170,22 +122,21 @@ public class PartInputStream extends InputStream {
                         }
                     }
                     if (this.nextDirectory != null) {
-                        this.directory = this.nextDirectory;
+                        this.currentPart = this.nextDirectory.resolve(this.currentPart.getFileName());
                     }
                     closeStream = this.nextCloseStream;
                 }
                 if (closeStream) {
-                    close();
+                    this.streamClosed = true;
                     return false;
                 }
-                partFile = this.directory.resolve(this.name + partString);
             } while (!Files.isReadable(partFile));
         }
         this.partStream = new BufferedInputStream(Files.newInputStream(partFile));
         
         for (ChecksumAlgorithm hash : ChecksumAlgorithmFactory.getDefault().getAlgorithms()) {
             for (int i = 0; i < hash.getNumberOfExtensions(); i++) {
-                Path hashFile = this.directory.resolve(this.name + partString + "." + hash.getExtension(i));
+                Path hashFile = this.currentPart.getFileSystem().getPath(this.currentPart.toString()+"."+hash.getExtension(i));
                 if (Files.isRegularFile(hashFile)) {
                     if (Files.size(hashFile) > 1024) {
                         continue;
@@ -195,7 +146,7 @@ public class PartInputStream extends InputStream {
                         this.partDigest = hash.newChecksum();
                         break;
                     } catch (IllegalArgumentException ex) {
-                        //todo?
+                        //ignore
                     }
                 }
             }
@@ -207,6 +158,9 @@ public class PartInputStream extends InputStream {
     @Override
     public int read() throws IOException {
         if (this.closed) {
+            throw new IOException("stream is closed");
+        }
+        if (this.streamClosed) {
             return -1;
         }
         
@@ -232,6 +186,9 @@ public class PartInputStream extends InputStream {
     @Override
     public int read(byte[] b, int off, int len) throws IOException {
         if (this.closed) {
+            throw new IOException("stream is closed");
+        }
+        if (this.streamClosed) {
             return -1;
         }
 
