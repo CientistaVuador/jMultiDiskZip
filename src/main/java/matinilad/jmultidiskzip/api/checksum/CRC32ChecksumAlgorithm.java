@@ -77,12 +77,7 @@ public class CRC32ChecksumAlgorithm implements ChecksumAlgorithm {
         }
 
     }
-
-    @Override
-    public String getDisplayName() {
-        return "CRC32 (Very Fast, Totally Insecure) - 4 Bytes";
-    }
-
+    
     @Override
     public String getName() {
         return "CRC32";

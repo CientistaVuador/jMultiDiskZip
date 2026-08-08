@@ -37,7 +37,6 @@ import java.util.Objects;
  */
 public abstract class DefaultCompressionAlgorithm implements CompressionAlgorithm {
 
-    private final String displayName;
     private final String name;
     private final String[] extensions;
     private final int minCompressionLevel;
@@ -46,7 +45,6 @@ public abstract class DefaultCompressionAlgorithm implements CompressionAlgorith
     private final String[] magicNumbers;
 
     public DefaultCompressionAlgorithm(
-            String displayName,
             String name,
             String[] extensions,
             int minCompressionLevel,
@@ -64,7 +62,6 @@ public abstract class DefaultCompressionAlgorithm implements CompressionAlgorith
             throw new IllegalArgumentException("defaultCompressionLevel >= maxCompressionLevel");
         }
         
-        this.displayName = Objects.requireNonNull(displayName, "displayName is null");
         this.name = Objects.requireNonNull(name, "name is null");
         this.extensions = Objects.requireNonNull(extensions, "extensions is null").clone();
         this.minCompressionLevel = minCompressionLevel;
@@ -73,11 +70,6 @@ public abstract class DefaultCompressionAlgorithm implements CompressionAlgorith
         this.magicNumbers = Objects.requireNonNull(magicNumbers, "magicNumbers is null").clone();
     }
     
-    @Override
-    public String getDisplayName() {
-        return this.displayName;
-    }
-
     @Override
     public String getName() {
         return this.name;

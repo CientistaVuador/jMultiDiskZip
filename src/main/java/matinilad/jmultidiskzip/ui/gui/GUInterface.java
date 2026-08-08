@@ -41,6 +41,10 @@ public class GUInterface {
 
             MainWindow mainWindow = new MainWindow();
             mainWindow.setVisible(true);
+            
+            SettingsDialog dialog = new SettingsDialog(mainWindow, true);
+            dialog.selectExtractTab();
+            dialog.setVisible(true);
         });
     }
 

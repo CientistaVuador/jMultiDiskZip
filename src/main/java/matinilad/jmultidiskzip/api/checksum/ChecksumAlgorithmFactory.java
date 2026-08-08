@@ -41,9 +41,9 @@ public class ChecksumAlgorithmFactory  {
     static {
         try {
             ChecksumAlgorithm[] defaults = {
-                new DefaultChecksumAlgorithm("SHA-256 (Secure) - 32 Bytes", "SHA-256", new String[]{"sha256"}),
-                new DefaultChecksumAlgorithm("SHA1 (Insecure) - 20 Bytes", "SHA-1", new String[] {"sha1"}),
-                new DefaultChecksumAlgorithm("MD5 (Fast, Insecure) - 16 Bytes", "MD5", new String[] {"md5"}),
+                new DefaultChecksumAlgorithm("SHA-256", new String[]{"sha256"}),
+                new DefaultChecksumAlgorithm("SHA-1", new String[] {"sha1"}),
+                new DefaultChecksumAlgorithm("MD5", new String[] {"md5"}),
                 new CRC32ChecksumAlgorithm()
             };
             for (ChecksumAlgorithm d : defaults) {

@@ -35,9 +35,7 @@ import java.io.OutputStream;
  * @author Cien
  */
 public interface CompressionAlgorithm {
-
-    public String getDisplayName();
-
+    
     public String getName();
 
     public int getNumberOfExtensions();

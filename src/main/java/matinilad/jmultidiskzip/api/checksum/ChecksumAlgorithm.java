@@ -31,9 +31,7 @@ package matinilad.jmultidiskzip.api.checksum;
  * @author Cien
  */
 public interface ChecksumAlgorithm {
-
-    public String getDisplayName();
-
+    
     public String getName();
 
     public int getNumberOfExtensions();

@@ -38,6 +38,7 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Set;
 import java.util.function.Consumer;
+import java.util.stream.Stream;
 
 /**
  *
@@ -83,23 +84,27 @@ public class ArchivePathStream {
     }
 
     private final Path[] inputs;
+    private final boolean hiddenFilesEnabled;
 
-    public ArchivePathStream(Path[] input) {
+    public ArchivePathStream(Path[] input, boolean hiddenFilesEnabled) {
         this.inputs = Objects.requireNonNull(input, "inputs is null").clone();
         for (int i = 0; i < this.inputs.length; i++) {
             Objects.requireNonNull(this.inputs[i], "input at index " + i + " is null");
         }
+        this.hiddenFilesEnabled = hiddenFilesEnabled;
     }
 
     public Path[] getInputs() {
         return inputs.clone();
     }
 
-    private List<Path> preprocess(List<Path> list, Consumer<Entry> consumer) {
-        List<Path> directories = new ArrayList<>();
-        List<Path> files = new ArrayList<>();
+    public boolean isHiddenFilesEnabled() {
+        return hiddenFilesEnabled;
+    }
 
-        for (Path e : list) {
+    private List<Path> preprocess(List<Path> input, Consumer<Entry> consumer) {
+        List<Path> realFiles = new ArrayList<>();
+        for (Path e : input) {
             Path real;
             try {
                 real = e.toRealPath();
@@ -110,22 +115,14 @@ public class ArchivePathStream {
 
             Path parent = real.getParent();
             if (parent == null) {
-                if (!Files.isDirectory(real)) {
-                    consumer.accept(new Entry(null, real, new IOException("root directory is not a directory")));
-                    continue;
-                }
                 try {
-                    List<Path> dir = new ArrayList<>();
-                    List<Path> fil = new ArrayList<>();
-                    Files.list(real).forEach((c) -> {
-                        if (Files.isDirectory(c)) {
-                            dir.add(c);
-                        } else if (Files.isRegularFile(c)) {
-                            fil.add(c);
-                        }
-                    });
-                    directories.addAll(dir);
-                    files.addAll(fil);
+                    List<Path> files = new ArrayList<>();
+                    try (Stream<Path> stream = Files.list(real)) {
+                        stream.forEach((c) -> {
+                            files.add(c);
+                        });
+                    }
+                    realFiles.addAll(files);
                 } catch (IOException ex) {
                     consumer.accept(new Entry(null, real, ex));
                     continue;
@@ -136,10 +133,29 @@ public class ArchivePathStream {
                 continue;
             }
 
+            realFiles.add(real);
+        }
+
+        List<Path> directories = new ArrayList<>();
+        List<Path> files = new ArrayList<>();
+
+        for (Path real : realFiles) {
+            try {
+                if (!isHiddenFilesEnabled() && Files.isHidden(real)) {
+                    consumer.accept(new Entry(null, real, new IOException("hidden file")));
+                    continue;
+                }
+            } catch (IOException ex) {
+                consumer.accept(new Entry(null, real, ex));
+                continue;
+            }
+
             if (Files.isDirectory(real)) {
                 directories.add(real);
             } else if (Files.isRegularFile(real)) {
                 files.add(real);
+            } else {
+                consumer.accept(new Entry(null, real, new IOException("not a file or directory")));
             }
         }
 
@@ -159,24 +175,33 @@ public class ArchivePathStream {
 
     private void process(Consumer<Entry> consumer, Path root, Path path) {
         consumer.accept(new Entry(root, path, null));
-        
+
         if (Files.isDirectory(path)) {
+            List<Path> files = new ArrayList<>();
             try {
-                List<Path> preprocessed = preprocess(Files.list(path).toList(), consumer);
-                for (Path p:preprocessed) {
-                    process(consumer, root, p);
+                try (Stream<Path> stream = Files.list(path)) {
+                    stream.forEach((c) -> {
+                        files.add(c);
+                    });
                 }
             } catch (IOException ex) {
+                files.clear();
                 consumer.accept(new Entry(null, path, ex));
             } catch (UncheckedIOException ex) {
+                files.clear();
                 consumer.accept(new Entry(null, path, ex.getCause()));
+            }
+            
+            List<Path> preprocessed = preprocess(files, consumer);
+            for (Path p : preprocessed) {
+                process(consumer, root, p);
             }
         }
     }
 
     public void stream(Consumer<Entry> consumer) {
         Set<String> names = new HashSet<>();
-        
+
         List<Path> preprocessed = preprocess(Arrays.asList(this.inputs), consumer);
         for (Path e : preprocessed) {
             String name = e.getFileName().toString();
@@ -187,7 +212,7 @@ public class ArchivePathStream {
                 consumer.accept(new Entry(null, e, new IOException("duplicated filename")));
                 continue;
             }
-            
+
             process(consumer, e.getParent(), e);
         }
     }

@@ -37,18 +37,19 @@ import matinilad.jmultidiskzip.api.compression.CompressionAlgorithmFactory;
  * @author Cien
  */
 public class CreateOperationSettings {
-    
+
     private long partSize = 100 * 1024 * 1024;
     private ChecksumAlgorithm partHash = ChecksumAlgorithmFactory.getDefault().fromName("sha-256");
     private ChecksumAlgorithm fileHash = ChecksumAlgorithmFactory.getDefault().fromName("sha-256");
     private CompressionAlgorithm compression = CompressionAlgorithmFactory.getDefault().fromName("gz");
     private int compressionLevel = this.compression.getDefaultCompressionLevel();
     private OutputFormat outputFormat = null;
-    
+    private boolean hiddenFilesEnabled = false;
+
     public CreateOperationSettings() {
-        
+
     }
-    
+
     public CreateOperationSettings(CreateOperationSettings settings) {
         this.partSize = settings.partSize;
         this.partHash = settings.partHash;
@@ -56,6 +57,7 @@ public class CreateOperationSettings {
         this.compression = settings.compression;
         this.compressionLevel = settings.compressionLevel;
         this.outputFormat = settings.outputFormat;
+        this.hiddenFilesEnabled = settings.hiddenFilesEnabled;
     }
 
     public long getPartSize() {
@@ -76,18 +78,6 @@ public class CreateOperationSettings {
     public void setPartHash(ChecksumAlgorithm partHash) {
         this.partHash = partHash;
     }
-    
-    public void setPartHash(String name) {
-        if (name == null) {
-            setPartHash((ChecksumAlgorithm)null);
-            return;
-        }
-        ChecksumAlgorithm algo = ChecksumAlgorithmFactory.getDefault().fromName(name);
-        if (algo == null) {
-            throw new IllegalArgumentException("for name: "+name);
-        }
-        setPartHash(algo);
-    }
 
     public ChecksumAlgorithm getFileHash() {
         return fileHash;
@@ -96,19 +86,7 @@ public class CreateOperationSettings {
     public void setFileHash(ChecksumAlgorithm fileHash) {
         this.fileHash = fileHash;
     }
-    
-    public void setFileHash(String name) {
-        if (name == null) {
-            setFileHash((ChecksumAlgorithm)null);
-            return;
-        }
-        ChecksumAlgorithm algo = ChecksumAlgorithmFactory.getDefault().fromName(name);
-        if (algo == null) {
-            throw new IllegalArgumentException("for name: "+name);
-        }
-        setFileHash(algo);
-    }
-    
+
     public CompressionAlgorithm getCompression() {
         return compression;
     }
@@ -120,18 +98,6 @@ public class CreateOperationSettings {
         } else {
             this.compressionLevel = 0;
         }
-    }
-    
-    public void setCompression(String name) {
-        if (name == null) {
-            setCompression((CompressionAlgorithm)null);
-            return;
-        }
-        CompressionAlgorithm algo = CompressionAlgorithmFactory.getDefault().fromName(name);
-        if (algo == null) {
-            throw new IllegalArgumentException("for name: "+name);
-        }
-        setCompression(algo);
     }
 
     public int getCompressionLevel() {
@@ -154,7 +120,7 @@ public class CreateOperationSettings {
         }
         this.compressionLevel = compressionLevel;
     }
-    
+
     public OutputFormat getOutputFormat() {
         return outputFormat;
     }
@@ -162,35 +128,33 @@ public class CreateOperationSettings {
     public void setOutputFormat(OutputFormat outputFormat) {
         this.outputFormat = outputFormat;
     }
-    
-    public void setOutputFormat(String name) {
-        if (name == null) {
-            this.outputFormat = null;
-            return;
-        }
-        OutputFormat format = OutputFormat.valueOf(name);
-        if (format == null) {
-            throw new IllegalArgumentException("for name: "+name);
-        }
-        this.outputFormat = format;
+
+    public boolean isHiddenFilesEnabled() {
+        return hiddenFilesEnabled;
     }
-    
+
+    public void setHiddenFilesEnabled(boolean hiddenFilesEnabled) {
+        this.hiddenFilesEnabled = hiddenFilesEnabled;
+    }
+
     public void save() {
         Config.set("create.partSize", this.partSize);
-        Config.setNullEncoded("create.partHash", (this.partHash == null ? null : this.partHash.getName()));
-        Config.setNullEncoded("create.fileHash", (this.fileHash == null ? null : this.fileHash.getName()));
-        Config.setNullEncoded("create.compression", (this.compression == null ? null : this.compression.getName()));
+        Config.setObject("create.partHash", ChecksumAlgorithm::getName, this.partHash);
+        Config.setObject("create.fileHash", ChecksumAlgorithm::getName, this.fileHash);
+        Config.setObject("create.compression", CompressionAlgorithm::getName, this.compression);
         Config.set("create.compressionLevel", this.compressionLevel);
-        Config.setNullEncoded("create.outputFormat", (this.outputFormat == null ? null : this.outputFormat.name()));
+        Config.setObject("create.outputFormat", OutputFormat::name, this.outputFormat);
+        Config.set("create.hiddenFilesEnabled", this.hiddenFilesEnabled);
     }
-    
+
     public void load() {
         setPartSize(Config.getLong("create.partSize", this.partSize));
-        setPartHash(Config.getNullEncoded("create.partHash", (this.partHash == null ? null : this.partHash.getName())));
-        setFileHash(Config.getNullEncoded("create.fileHash", (this.fileHash == null ? null : this.fileHash.getName())));
-        setCompression(Config.getNullEncoded("create.compression", (this.compression == null ? null : this.compression.getName())));
+        setPartHash(Config.getObject("create.partHash", ChecksumAlgorithmFactory.getDefault()::fromName, this.partHash));
+        setFileHash(Config.getObject("create.fileHash", ChecksumAlgorithmFactory.getDefault()::fromName, this.fileHash));
+        setCompression(Config.getObject("create.compression", CompressionAlgorithmFactory.getDefault()::fromName, this.compression));
         setCompressionLevel(Config.getInt("create.compressionLevel", this.compressionLevel));
-        setOutputFormat(Config.getNullEncoded("create.outputFormat", (this.outputFormat == null ? null : this.outputFormat.name())));
+        setOutputFormat(Config.getObject("create.outputFormat", OutputFormat::valueOf, this.outputFormat));
+        setHiddenFilesEnabled(Config.getBoolean("create.hiddenFilesEnabled", this.hiddenFilesEnabled));
     }
     
 }

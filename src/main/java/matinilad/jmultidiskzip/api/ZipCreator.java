@@ -79,9 +79,9 @@ public class ZipCreator {
     private ByteArrayOutputStream checksumsStream = null;
     private ZipOutputStream checksumsZip = null;
 
-    public ZipCreator(ZipOutputStream output, Path[] inputs, ChecksumAlgorithm hash) {
+    public ZipCreator(ZipOutputStream output, ArchivePathStream pathStream, ChecksumAlgorithm hash) {
         this.output = Objects.requireNonNull(output, "output is null");
-        this.pathStream = new ArchivePathStream(inputs);
+        this.pathStream = Objects.requireNonNull(pathStream, "pathStream is null");
         this.hash = hash;
     }
 

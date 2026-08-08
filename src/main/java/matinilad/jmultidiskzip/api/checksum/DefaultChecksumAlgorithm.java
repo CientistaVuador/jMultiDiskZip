@@ -36,23 +36,16 @@ import java.util.Objects;
  */
 public class DefaultChecksumAlgorithm implements ChecksumAlgorithm {
 
-    private final String displayName;
     private final String name;
     private final String[] extensions;
     private final int length;
 
-    public DefaultChecksumAlgorithm(String displayName, String name, String[] extensions) throws NoSuchAlgorithmException {
-        this.displayName = Objects.requireNonNull(displayName, "displayName is null");
+    public DefaultChecksumAlgorithm(String name, String[] extensions) throws NoSuchAlgorithmException {
         this.name = Objects.requireNonNull(name, "name is null");
         this.extensions = Objects.requireNonNull(extensions, "extensions is null").clone();
         this.length = MessageDigest.getInstance(name).getDigestLength();
     }
     
-    @Override
-    public String getDisplayName() {
-        return this.displayName;
-    }
-
     @Override
     public String getName() {
         return this.name;

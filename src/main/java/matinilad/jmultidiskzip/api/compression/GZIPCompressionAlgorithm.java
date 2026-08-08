@@ -51,7 +51,7 @@ public class GZIPCompressionAlgorithm extends DefaultCompressionAlgorithm {
     }
     
     public GZIPCompressionAlgorithm() {
-        super("GZIP", "gz", new String[] {"gz"}, Deflater.NO_COMPRESSION, Deflater.BEST_COMPRESSION + 1, 6, new String[] {"1F8B"});
+        super("gz", new String[] {"gz"}, Deflater.NO_COMPRESSION, Deflater.BEST_COMPRESSION + 1, 6, new String[] {"1F8B"});
     }
     
     @Override

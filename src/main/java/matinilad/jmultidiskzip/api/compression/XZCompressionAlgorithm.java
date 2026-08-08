@@ -42,7 +42,7 @@ import org.tukaani.xz.XZOutputStream;
 public class XZCompressionAlgorithm extends DefaultCompressionAlgorithm {
 
     public XZCompressionAlgorithm() {
-        super("XZ", "xz", new String[] {"xz"}, LZMA2Options.PRESET_MIN, LZMA2Options.PRESET_MAX + 1, LZMA2Options.PRESET_DEFAULT, new String[] {"FD377A585A00"});
+        super("xz", new String[] {"xz"}, LZMA2Options.PRESET_MIN, LZMA2Options.PRESET_MAX + 1, LZMA2Options.PRESET_DEFAULT, new String[] {"FD377A585A00"});
     }
     
     public XZOutputStream compress(OutputStream out, LZMA2Options options) throws IOException {

@@ -36,6 +36,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Properties;
+import java.util.function.Function;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -126,38 +127,73 @@ public class Config {
         Runtime.getRuntime().addShutdownHook(saveConfig);
     }
     
-    public static String get(String property, String defaultValue) {
-        return CONFIG.getProperty(property, defaultValue);
-    }
-    
     public static String get(String property) {
         return CONFIG.getProperty(property);
     }
     
+    public static String get(String property, String defaultValue) {
+        return CONFIG.getProperty(property, defaultValue);
+    }
+    
     public static int getInt(String property, int defaultValue) {
-        return Integer.parseInt(get(property, Integer.toString(defaultValue)));
+        String result = get(property);
+        if (result == null) {
+            return defaultValue;
+        }
+        try {
+            return Integer.parseInt(result);
+        } catch (NumberFormatException ex) {
+            return defaultValue;
+        }
     }
     
     public static long getLong(String property, long defaultValue) {
-        return Long.parseLong(get(property, Long.toString(defaultValue)));
-    }
-    
-    public static String getNullEncoded(String property, String defaultValue) {
-        String value = get(property, defaultValue);
-        if (value == null || value.equalsIgnoreCase("NULL")) {
-            return null;
+        String result = get(property);
+        if (result == null) {
+            return defaultValue;
         }
-        if (value.startsWith("VALUE@")) {
-            return value.substring("VALUE@".length());
+        try {
+            return Long.parseLong(result);
+        } catch (NumberFormatException ex) {
+            return defaultValue;
         }
-        return value;
     }
     
     public static boolean getBoolean(String property, boolean defaultValue) {
-        return Boolean.parseBoolean(get(property, Boolean.toString(defaultValue)));
+        String result = get(property);
+        if (result == null) {
+            return defaultValue;
+        }
+        return Boolean.parseBoolean(result);
+    }
+    
+    public static <T> T getObject(String property, Function<String, T> function, T defaultValue) {
+        String result = get(property);
+        if (result == null) {
+            return defaultValue;
+        }
+        if (result.equalsIgnoreCase("NULL")) {
+            return null;
+        }
+        if (result.length() >= "VALUE?".length() && result.substring(0, "VALUE?".length()).equalsIgnoreCase("VALUE?")) {
+            result = result.substring("VALUE?".length());
+        }
+        try {
+            T after = function.apply(result);
+            if (after == null) {
+                return defaultValue;
+            }
+            return after;
+        } catch (Throwable t) {
+            return defaultValue;
+        }
     }
     
     public static void set(String property, String value) {
+        if (value == null) {
+            CONFIG.remove(property);
+            return;
+        }
         CONFIG.setProperty(property, value);
     }
     
@@ -169,15 +205,20 @@ public class Config {
         CONFIG.setProperty(property, Long.toString(value));
     }
     
-    public static void setNullEncoded(String property, String value) {
-        if (value == null) {
-            set(property, "NULL");
-            return;
-        }
-        set(property, "VALUE@"+value);
-    }
-    
     public static void set(String property, boolean value) {
         CONFIG.setProperty(property, Boolean.toString(value));
+    }
+    
+    public static <T> void setObject(String property, Function<T, String> function, T obj) {
+        if (obj == null) {
+            CONFIG.setProperty(property, "NULL");
+            return;
+        }
+        String after = function.apply(obj);
+        if (after == null) {
+            CONFIG.remove(property);
+            return;
+        }
+        CONFIG.setProperty(property, "VALUE?"+after);
     }
 }

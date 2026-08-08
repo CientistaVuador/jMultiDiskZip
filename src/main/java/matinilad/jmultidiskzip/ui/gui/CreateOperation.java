@@ -39,6 +39,7 @@ import java.util.List;
 import java.util.zip.ZipOutputStream;
 import javax.swing.JOptionPane;
 import javax.swing.SwingUtilities;
+import matinilad.jmultidiskzip.api.ArchivePathStream;
 import matinilad.jmultidiskzip.api.ZipCreator;
 import matinilad.jmultidiskzip.api.checksum.ChecksumAlgorithm;
 import matinilad.jmultidiskzip.api.utils.Base64File;
@@ -138,8 +139,9 @@ public class CreateOperation extends ProgressDialog {
                 ZipOutputStream zipOut = new ZipOutputStream(countIn, StandardCharsets.UTF_8);
                 out = zipOut;
                 toClose.add(out);
-
-                ZipCreator creator = new ZipCreator(zipOut, data.getInput(), settings.getFileHash()) {
+                
+                ArchivePathStream pathStream = new ArchivePathStream(data.getInput(), settings.isHiddenFilesEnabled());
+                ZipCreator creator = new ZipCreator(zipOut, pathStream, settings.getFileHash()) {
                     @Override
                     protected void onFile(Path file) {
                         if (Files.isDirectory(file)) {

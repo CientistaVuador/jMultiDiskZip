@@ -40,6 +40,7 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Scanner;
 import java.util.zip.ZipOutputStream;
+import matinilad.jmultidiskzip.api.ArchivePathStream;
 import matinilad.jmultidiskzip.api.utils.PartOutputStream;
 import matinilad.jmultidiskzip.api.ZipCreator;
 import matinilad.jmultidiskzip.api.checksum.ChecksumAlgorithm;
@@ -533,7 +534,7 @@ public class CreateCommand {
                 final CountingOutputStream inCount = countIn;
                 final CountingOutputStream outCount = countOut;
 
-                ZipCreator writer = new ZipCreator(zipOut, inputFiles.toArray(Path[]::new), fileHash) {
+                ZipCreator writer = new ZipCreator(zipOut, new ArchivePathStream(inputFiles.toArray(Path[]::new), true), fileHash) {
                     @Override
                     protected void onFile(Path file) {
                         if (verbose && Files.isDirectory(file)) {
