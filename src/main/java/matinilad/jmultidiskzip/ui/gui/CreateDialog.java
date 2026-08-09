@@ -35,6 +35,7 @@ import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.List;
 import javax.swing.DefaultListModel;
+import javax.swing.ImageIcon;
 import javax.swing.JFileChooser;
 import javax.swing.JOptionPane;
 import javax.swing.JPasswordField;
@@ -86,6 +87,7 @@ public class CreateDialog extends javax.swing.JDialog {
 
         setDefaultCloseOperation(javax.swing.WindowConstants.DISPOSE_ON_CLOSE);
         setTitle("Create");
+        setIconImage(new ImageIcon(MainWindow.class.getResource("create.png")).getImage());
         setMinimumSize(new java.awt.Dimension(200, 400));
         setType(java.awt.Window.Type.POPUP);
 

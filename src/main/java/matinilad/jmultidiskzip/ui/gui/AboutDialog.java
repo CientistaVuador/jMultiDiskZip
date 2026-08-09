@@ -29,6 +29,7 @@ package matinilad.jmultidiskzip.ui.gui;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
+import javax.swing.ImageIcon;
 import matinilad.jmultidiskzip.ui.UIUtils;
 
 /**
@@ -59,6 +60,7 @@ public class AboutDialog extends javax.swing.JDialog {
 
         setDefaultCloseOperation(javax.swing.WindowConstants.DISPOSE_ON_CLOSE);
         setTitle("About");
+        setIconImage(new ImageIcon(MainWindow.class.getResource("info.png")).getImage());
         setMinimumSize(new java.awt.Dimension(100, 100));
 
         aboutArea.setEditable(false);

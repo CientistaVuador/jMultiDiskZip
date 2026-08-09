@@ -33,6 +33,7 @@ import java.io.File;
 import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.List;
+import javax.swing.ImageIcon;
 import javax.swing.JFileChooser;
 import javax.swing.JOptionPane;
 import javax.swing.JPasswordField;
@@ -95,6 +96,7 @@ public class ExtractDialog extends javax.swing.JDialog {
 
         setDefaultCloseOperation(javax.swing.WindowConstants.DISPOSE_ON_CLOSE);
         setTitle("Extract");
+        setIconImage(new ImageIcon(MainWindow.class.getResource("open.png")).getImage());
         setMinimumSize(new java.awt.Dimension(200, 260));
 
         jPanel1.setBorder(javax.swing.BorderFactory.createTitledBorder("Input file (Drag and drop supported)"));

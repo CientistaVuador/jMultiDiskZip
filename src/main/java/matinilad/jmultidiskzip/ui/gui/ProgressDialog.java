@@ -34,6 +34,7 @@ import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Future;
+import javax.swing.ImageIcon;
 import javax.swing.JOptionPane;
 import javax.swing.SwingUtilities;
 import matinilad.jmultidiskzip.ui.UIUtils;
@@ -66,7 +67,7 @@ public abstract class ProgressDialog extends javax.swing.JDialog {
 
     private Thread thread = null;
     private boolean sentInterruptSignal = false;
-    
+
     private boolean closeAfterFinishEnabled = false;
 
     public ProgressDialog(java.awt.Frame parent, boolean modal) {
@@ -90,7 +91,7 @@ public abstract class ProgressDialog extends javax.swing.JDialog {
     public boolean isCloseAfterFinishEnabled() {
         return closeAfterFinishEnabled;
     }
-    
+
     private void guiSetFilename(String name) {
         this.filenameField.setText(name);
     }
@@ -199,6 +200,7 @@ public abstract class ProgressDialog extends javax.swing.JDialog {
 
         setDefaultCloseOperation(javax.swing.WindowConstants.DO_NOTHING_ON_CLOSE);
         setTitle("Title goes here");
+        setIconImage(new ImageIcon(MainWindow.class.getResource("progress.png")).getImage());
         setMinimumSize(new java.awt.Dimension(250, 450));
         addWindowListener(new java.awt.event.WindowAdapter() {
             public void windowClosing(java.awt.event.WindowEvent evt) {
@@ -675,11 +677,30 @@ public abstract class ProgressDialog extends javax.swing.JDialog {
             throw new UnsupportedOperationException("already started");
         }
         this.thread = new Thread(() -> {
+            List<Runnable> finishTasks = new ArrayList<>();
             try {
                 try {
                     ProgressDialog.this.run();
                 } catch (Throwable t) {
-                    Runnable askClearFiles = () -> {
+                    boolean interrupted = (t instanceof InterruptedException);
+                    if (!interrupted && t instanceof IOException io) {
+                        interrupted = (io.getCause() instanceof InterruptedException);
+                    }
+                    if (!interrupted) {
+                        ProgressDialog.this.incrementErrors(1);
+                        ProgressDialog.this.println(UIUtils.stacktraceOf(t));
+                        finishTasks.add(() -> {
+                            Toolkit.getDefaultToolkit().beep();
+                            JOptionPane.showMessageDialog(
+                                    ProgressDialog.this,
+                                    "The operation has failed, check log for details.",
+                                    "Operation failed!",
+                                    JOptionPane.ERROR_MESSAGE
+                            );
+                        });
+                    }
+
+                    finishTasks.add(() -> {
                         if (isErrorCleanupEnabled()) {
                             int response = JOptionPane.showConfirmDialog(
                                     ProgressDialog.this,
@@ -696,33 +717,10 @@ public abstract class ProgressDialog extends javax.swing.JDialog {
                                 }
                             }
                         }
-                    };
-
-                    boolean interrupted = (t instanceof InterruptedException);
-                    if (!interrupted && t instanceof IOException io) {
-                        interrupted = (io.getCause() instanceof InterruptedException);
-                    }
-                    if (!interrupted) {
-                        ProgressDialog.this.incrementErrors(1);
-                        ProgressDialog.this.println(UIUtils.stacktraceOf(t));
-                        SwingUtilities.invokeLater(() -> {
-                            Toolkit.getDefaultToolkit().beep();
-                            JOptionPane.showMessageDialog(
-                                    ProgressDialog.this,
-                                    "The operation has failed, check log for details.",
-                                    "Operation failed!",
-                                    JOptionPane.ERROR_MESSAGE
-                            );
-                            askClearFiles.run();
-                        });
-                    } else {
-                        SwingUtilities.invokeLater(() -> {
-                            askClearFiles.run();
-                        });
-                    }
+                    });
                 }
             } finally {
-                SwingUtilities.invokeLater(() -> {
+                finishTasks.add(() -> {
                     this.logTextArea.append("Finished\n");
                     this.cancelButton.setEnabled(false);
                 });
@@ -730,11 +728,17 @@ public abstract class ProgressDialog extends javax.swing.JDialog {
                 setFilename("Finished");
                 setFileSize(0);
                 updateFileStatus(true);
-                
-                SwingUtilities.invokeLater(() -> {
+
+                finishTasks.add(() -> {
                     if (isCloseAfterFinishEnabled() && getErrors() == 0) {
                         setVisible(false);
                         dispose();
+                    }
+                });
+
+                SwingUtilities.invokeLater(() -> {
+                    for (Runnable r : finishTasks) {
+                        r.run();
                     }
                 });
             }

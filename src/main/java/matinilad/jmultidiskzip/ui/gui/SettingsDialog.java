@@ -28,8 +28,8 @@ package matinilad.jmultidiskzip.ui.gui;
 
 import java.util.ArrayList;
 import java.util.List;
-import javax.swing.ComboBoxModel;
 import javax.swing.DefaultComboBoxModel;
+import javax.swing.ImageIcon;
 import javax.swing.SpinnerNumberModel;
 import matinilad.jmultidiskzip.api.checksum.ChecksumAlgorithm;
 import matinilad.jmultidiskzip.api.checksum.ChecksumAlgorithmFactory;
@@ -264,6 +264,7 @@ public class SettingsDialog extends javax.swing.JDialog {
 
         setDefaultCloseOperation(javax.swing.WindowConstants.DISPOSE_ON_CLOSE);
         setTitle("Settings");
+        setIconImage(new ImageIcon(MainWindow.class.getResource("settings.png")).getImage());
         setResizable(false);
 
         jLabel1.setText("Part Size:");

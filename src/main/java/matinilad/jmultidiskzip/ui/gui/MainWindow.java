@@ -33,6 +33,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import javax.swing.ImageIcon;
 import javax.swing.JOptionPane;
 import matinilad.jmultidiskzip.api.checksum.ChecksumAlgorithm;
 import matinilad.jmultidiskzip.api.checksum.ChecksumAlgorithmFactory;
@@ -75,6 +76,7 @@ public class MainWindow extends javax.swing.JFrame {
 
         setDefaultCloseOperation(javax.swing.WindowConstants.EXIT_ON_CLOSE);
         setTitle(Config.name()+" "+Config.version());
+        setIconImage(new ImageIcon(MainWindow.class.getResource("next_part.png")).getImage());
         setMinimumSize(new java.awt.Dimension(300, 200));
 
         this.dragAndDropPanel.setTransferHandler(new FileDragAndDrop() {
@@ -107,6 +109,7 @@ public class MainWindow extends javax.swing.JFrame {
 
         jMenu1.setText("File");
 
+        createButton.setIcon(new javax.swing.ImageIcon(getClass().getResource("/matinilad/jmultidiskzip/ui/gui/create.png"))); // NOI18N
         createButton.setText("Create");
         createButton.addActionListener(new java.awt.event.ActionListener() {
             public void actionPerformed(java.awt.event.ActionEvent evt) {
@@ -115,6 +118,7 @@ public class MainWindow extends javax.swing.JFrame {
         });
         jMenu1.add(createButton);
 
+        extractButton.setIcon(new javax.swing.ImageIcon(getClass().getResource("/matinilad/jmultidiskzip/ui/gui/open.png"))); // NOI18N
         extractButton.setText("Extract");
         extractButton.addActionListener(new java.awt.event.ActionListener() {
             public void actionPerformed(java.awt.event.ActionEvent evt) {
@@ -127,6 +131,7 @@ public class MainWindow extends javax.swing.JFrame {
 
         editButton.setText("Edit");
 
+        settingsButton.setIcon(new javax.swing.ImageIcon(getClass().getResource("/matinilad/jmultidiskzip/ui/gui/settings.png"))); // NOI18N
         settingsButton.setText("Settings");
         settingsButton.addActionListener(new java.awt.event.ActionListener() {
             public void actionPerformed(java.awt.event.ActionEvent evt) {
@@ -139,6 +144,7 @@ public class MainWindow extends javax.swing.JFrame {
 
         jMenu3.setText("Help");
 
+        aboutButton.setIcon(new javax.swing.ImageIcon(getClass().getResource("/matinilad/jmultidiskzip/ui/gui/info.png"))); // NOI18N
         aboutButton.setText("About");
         aboutButton.addActionListener(new java.awt.event.ActionListener() {
             public void actionPerformed(java.awt.event.ActionEvent evt) {
