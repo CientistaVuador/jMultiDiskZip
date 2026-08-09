@@ -40,6 +40,21 @@ import java.util.Objects;
  */
 public class TempFileList {
     
+    public static boolean tryCreateDirectories(Path directory) {
+        TempFileList temp = new TempFileList();
+        try {
+            temp.createDirectories(directory);
+            if (!Files.isDirectory(directory)) {
+                throw new IOException();
+            }
+            return true;
+        } catch (IOException ex) {
+            return false;
+        } finally {
+            temp.deleteFiles();
+        }
+    }
+    
     private final List<Path> files = new ArrayList<>();
     
     public TempFileList() {

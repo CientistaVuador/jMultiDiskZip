@@ -43,7 +43,7 @@ import matinilad.jmultidiskzip.api.checksum.ChecksumAlgorithmFactory;
  * @author Cien
  */
 public class PartInputStream extends InputStream {
-    
+
     private final Object lock = new Object();
     private volatile boolean waitingForSignal = false;
     private volatile Path nextDirectory = null;
@@ -61,7 +61,7 @@ public class PartInputStream extends InputStream {
     public PartInputStream(Path partOne) {
         this.currentPart = PartOutputStream.getFirstPart(partOne);
     }
-    
+
     public void continueSignal(Path newDirectory, boolean closeStream) {
         synchronized (this.lock) {
             if (!this.waitingForSignal) {
@@ -87,7 +87,7 @@ public class PartInputStream extends InputStream {
                     this.partDigest.update(buffer, 0, r);
                 }
             }
-            
+
             byte[] resultHash = this.partDigest.digest();
             if (!MessageDigest.isEqual(resultHash, this.partHash)) {
                 HexFormat hex = HexFormat.of();
@@ -107,13 +107,17 @@ public class PartInputStream extends InputStream {
     private boolean nextPart() throws IOException {
         closePart();
 
-        Path partFile = this.currentPart;
-        if (!Files.isReadable(partFile)) {
-            do {
+        try {
+            if (Files.size(this.currentPart) <= 0) {
+                throw new IOException();
+            }
+            this.partStream = new BufferedInputStream(Files.newInputStream(this.currentPart));
+        } catch (IOException t) {
+            while (true) {
                 boolean closeStream;
                 synchronized (this.lock) {
                     this.waitingForSignal = true;
-                    onWaitingForNextPart(partFile);
+                    onWaitingForNextPart(this.currentPart);
                     if (this.waitingForSignal) {
                         try {
                             this.lock.wait();
@@ -130,13 +134,21 @@ public class PartInputStream extends InputStream {
                     this.streamClosed = true;
                     return false;
                 }
-            } while (!Files.isReadable(partFile));
+                try {
+                    if (Files.size(this.currentPart) <= 0) {
+                        throw new IOException();
+                    }
+                    this.partStream = new BufferedInputStream(Files.newInputStream(this.currentPart));
+                } catch (IOException ex) {
+                    continue;
+                }
+                break;
+            }
         }
-        this.partStream = new BufferedInputStream(Files.newInputStream(partFile));
-        
+
         for (ChecksumAlgorithm hash : ChecksumAlgorithmFactory.getDefault().getAlgorithms()) {
             for (int i = 0; i < hash.getNumberOfExtensions(); i++) {
-                Path hashFile = this.currentPart.getFileSystem().getPath(this.currentPart.toString()+"."+hash.getExtension(i));
+                Path hashFile = this.currentPart.getFileSystem().getPath(this.currentPart.toString() + "." + hash.getExtension(i));
                 if (Files.isRegularFile(hashFile)) {
                     if (Files.size(hashFile) > 1024) {
                         continue;
@@ -163,7 +175,7 @@ public class PartInputStream extends InputStream {
         if (this.streamClosed) {
             return -1;
         }
-        
+
         int r = -1;
         if (this.partStream != null) {
             r = this.partStream.read();

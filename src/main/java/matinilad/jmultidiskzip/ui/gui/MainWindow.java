@@ -86,16 +86,16 @@ public class MainWindow extends javax.swing.JFrame {
         });
 
         jLabel1.setHorizontalAlignment(javax.swing.SwingConstants.CENTER);
-        jLabel1.setText("Drag and drop files here for faster use");
+        jLabel1.setText("Drag and drop files here");
 
         javax.swing.GroupLayout dragAndDropPanelLayout = new javax.swing.GroupLayout(dragAndDropPanel);
         dragAndDropPanel.setLayout(dragAndDropPanelLayout);
         dragAndDropPanelLayout.setHorizontalGroup(
             dragAndDropPanelLayout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
             .addGroup(dragAndDropPanelLayout.createSequentialGroup()
-                .addContainerGap(195, Short.MAX_VALUE)
+                .addContainerGap(230, Short.MAX_VALUE)
                 .addComponent(jLabel1)
-                .addContainerGap(195, Short.MAX_VALUE))
+                .addContainerGap(231, Short.MAX_VALUE))
         );
         dragAndDropPanelLayout.setVerticalGroup(
             dragAndDropPanelLayout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
@@ -224,44 +224,54 @@ public class MainWindow extends javax.swing.JFrame {
         if (refiltered.size() == 1) {
             Path first = refiltered.get(0);
             if (PartOutputStream.getPartNumber(first) == 1) {
-                if (Files.isRegularFile(first)) {
-                    extractAuto(first);
-                    return;
-                }
+                extractAuto(first);
+                return;
             }
         }
         createAuto(files);
     }
 
-    private Path getDirectory(Path file) {
-        String name = Config.name() + " " + Long.toHexString(System.currentTimeMillis()).toUpperCase();
+    private Path getDirectory(Path file, boolean forceTimestampName) {
+        String timestamp = Config.name() + " " + Long.toHexString(System.currentTimeMillis()).toUpperCase();
 
-        Path bestDirectory = null;
-        if (file != null && file.getParent() != null) {
-            bestDirectory = file.getParent().resolve(name);
+        Path directory;
+        if (file != null
+                && file.getParent() != null
+                && TempFileList.tryCreateDirectories(file.getParent().resolve(timestamp))) {
+            directory = file.getParent();
+        } else {
+            directory = Path.of(System.getProperty("user.home"));
         }
-        Path fallbackDirectory = Path.of(System.getProperty("user.home")).resolve(name);
 
-        if (bestDirectory != null && !Files.exists(bestDirectory)) {
-            TempFileList list = new TempFileList();
-            try {
-                list.createDirectories(bestDirectory);
-                if (!Files.isDirectory(bestDirectory)) {
-                    throw new IOException();
+        String name = timestamp;
+        if (!forceTimestampName) {
+            if (file != null && file.getFileName() != null) {
+                String filename = file.getFileName().toString();
+                String[] split = filename.split("\\.");
+                if (!split[0].isBlank()) {
+                    name = split[0];
                 }
-                return bestDirectory;
-            } catch (IOException ex) {
-                //ignore
-            } finally {
-                list.deleteFiles();
             }
         }
 
-        return fallbackDirectory;
+        Path resultDirectory = directory.resolve(name);
+        if (Files.exists(resultDirectory)) {
+            for (int i = 1; i <= 100; i++) {
+                resultDirectory = directory.resolve(name + " (" + i + ")");
+                if (!Files.exists(resultDirectory)) {
+                    break;
+                }
+            }
+            if (Files.exists(resultDirectory)) {
+                resultDirectory = directory.resolve(timestamp);
+            }
+        }
+
+        return resultDirectory;
     }
 
     private void extractAuto(Path input) {
-        Path output = getDirectory(input);
+        Path output = getDirectory(input, false);
 
         boolean encrypted = false;
         if (input.getFileName().toString().toLowerCase().contains(".bin")) {
@@ -276,7 +286,7 @@ public class MainWindow extends javax.swing.JFrame {
                 encrypted = true;
             }
         }
-        
+
         ExtractDialog dialog = new ExtractDialog(this, true);
         dialog.auto(input, output, encrypted);
         dialog.setVisible(true);
@@ -291,12 +301,17 @@ public class MainWindow extends javax.swing.JFrame {
     }
 
     private void createAuto(List<Path> input) {
-        Path directory = getDirectory(input.get(0));
+        Path directory = getDirectory(input.get(0), true);
+        
         String name = Config.name();
-        for (Path e:input) {
+        for (Path e : input) {
             if (input.size() == 1 && e.getFileName() != null) {
-                name = e.getFileName().toString();
-                break;
+                String filename = e.getFileName().toString();
+                String[] split = filename.split("\\.");
+                if (!split[0].isBlank()) {
+                    name = split[0];
+                    break;
+                }
             }
             if (e.getParent() != null) {
                 Path parent = e.getParent();
@@ -311,7 +326,7 @@ public class MainWindow extends javax.swing.JFrame {
         CreateDialog dialog = new CreateDialog(this, true);
         dialog.auto(input.toArray(Path[]::new), output);
         dialog.setVisible(true);
-        
+
         if (Files.isDirectory(directory)) {
             try {
                 Desktop.getDesktop().open(directory.toFile());
