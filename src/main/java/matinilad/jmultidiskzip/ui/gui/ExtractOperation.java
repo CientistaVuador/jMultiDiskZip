@@ -43,7 +43,6 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.HexFormat;
 import java.util.List;
-import java.util.Objects;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.zip.ZipInputStream;
 import javax.swing.JOptionPane;
@@ -132,24 +131,6 @@ public class ExtractOperation extends ProgressDialog {
                 CountingInputStream countIn = new CountingInputStream(in);
                 in = countIn;
 
-                if (settings.isZipInZipEnabled()) {
-                    ZipInputStream z = new ZipInputStream(in, charset);
-                    if (z.getNextEntry() == null) {
-                        throw new IOException("empty or corrupt zip file");
-                    }
-                    in = z;
-                    toClose.add(in);
-                }
-
-                if (data.hasPassword()) {
-                    try {
-                        in = new EncryptedInputStream(in, data.getPassword());
-                        toClose.add(in);
-                    } finally {
-                        data.clearPassword();
-                    }
-                }
-
                 formatStream:
                 {
                     byte[] magic = in.readNBytes(256);
@@ -166,6 +147,24 @@ public class ExtractOperation extends ProgressDialog {
                         toClose.add(in);
                     } else {
                         in = pushback;
+                    }
+                }
+                
+                if (settings.isZipInZipEnabled()) {
+                    ZipInputStream z = new ZipInputStream(in, charset);
+                    if (z.getNextEntry() == null) {
+                        throw new IOException("empty or corrupt zip file");
+                    }
+                    in = z;
+                    toClose.add(in);
+                }
+                
+                if (data.hasPassword()) {
+                    try {
+                        in = new EncryptedInputStream(in, data.getPassword());
+                        toClose.add(in);
+                    } finally {
+                        data.clearPassword();
                     }
                 }
 

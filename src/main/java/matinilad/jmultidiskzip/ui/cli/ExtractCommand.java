@@ -429,11 +429,11 @@ public class ExtractCommand {
                 countIn = new CountingInputStream(in);
                 in = countIn;
 
+                in = getFormatStream(in);
+                
                 if (zipInZip) {
                     in = getZipInZip(in, charset);
                 }
-
-                in = getFormatStream(in);
 
                 if (decrypt) {
                     in = getEncryptedStream(out, in);
