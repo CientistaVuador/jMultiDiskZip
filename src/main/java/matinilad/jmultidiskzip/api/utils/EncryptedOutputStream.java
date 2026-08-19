@@ -86,6 +86,11 @@ public class EncryptedOutputStream extends FilterOutputStream {
         if (bufferSize > MAX_BUFFER_SIZE) {
             throw new IllegalArgumentException("bufferSize > MAX_BUFFER_SIZE");
         }
+        for (int i = 0; i < password.length; i++) {
+            if (password[i] == '\0') {
+                throw new IllegalArgumentException("password character at index "+i+" is null");
+            }
+        }
         
         if (userSalt == null) {
             this.userSalt = null;

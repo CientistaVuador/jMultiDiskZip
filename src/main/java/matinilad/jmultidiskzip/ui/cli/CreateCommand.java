@@ -123,6 +123,7 @@ public class CreateCommand {
         out.println("-verbose - Enables verbose output, otherwise only errors will be displayed [NOT REQUIRED]");
         out.println("-replaceFiles [yes/no/ask] - If the output file should be replaced if one already exists [DEFAULT IS ASK]");
         out.println("-format [binary/hex/base64] - Sets the output format [DEFAULT IS BINARY]");
+        out.println("-hidden - Includes hidden files [NOT REQUIRED]");
     }
 
     public static void run(InputStream in, PrintStream out, String[] args) throws Exception {
@@ -148,6 +149,7 @@ public class CreateCommand {
         boolean verbose = false;
         int replaceFiles = 0;
         String format = "binary";
+        boolean hiddenFiles = false;
 
         for (int i = 0; i < args.length; i++) {
             String argument = args[i].toLowerCase();
@@ -163,6 +165,10 @@ public class CreateCommand {
                 }
                 case "-verbose" -> {
                     verbose = true;
+                    continue;
+                }
+                case "-hidden" -> {
+                    hiddenFiles = true;
                     continue;
                 }
             }
@@ -398,7 +404,7 @@ public class CreateCommand {
         }
         
         try {
-            create(out, outputFile, partSize, partHash, fileHash, compression, compressionLevel, inputFiles, encrypt, verbose, format);
+            create(out, outputFile, partSize, partHash, fileHash, compression, compressionLevel, inputFiles, encrypt, verbose, format, hiddenFiles);
         } catch (IOException ex) {
             out.println("Operation failed!");
             ex.printStackTrace(out);
@@ -495,7 +501,8 @@ public class CreateCommand {
             List<Path> inputFiles,
             boolean encrypt,
             boolean verbose,
-            String format
+            String format,
+            boolean hiddenFiles
     ) throws IOException, InterruptedException {
         PartOutputStream partOut = null;
         CountingOutputStream countIn = null;
@@ -533,7 +540,7 @@ public class CreateCommand {
                 final CountingOutputStream inCount = countIn;
                 final CountingOutputStream outCount = countOut;
 
-                ZipCreator writer = new ZipCreator(zipOut, new ArchivePathStream(inputFiles.toArray(Path[]::new), true), fileHash) {
+                ZipCreator writer = new ZipCreator(zipOut, new ArchivePathStream(inputFiles.toArray(Path[]::new), hiddenFiles), fileHash) {
                     @Override
                     protected void onFile(Path file) {
                         if (verbose && Files.isDirectory(file)) {

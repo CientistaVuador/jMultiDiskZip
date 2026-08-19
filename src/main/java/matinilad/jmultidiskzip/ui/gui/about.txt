@@ -1,3 +1,13 @@
+jMultiDiskZip is designed to archive, compress and split files all in once.
+
+It's main purpose is to be used with optical disks where size, speed and random access
+are limiting factors.
+
+All reads are sequential and files are validated before and after extraction.
+
+If a required part is not found within the current directory, the program will
+freeze and request the required part from the user.
+
 This is free and unencumbered software released into the public domain.
 
 Anyone is free to copy, modify, publish, use, compile, sell, or

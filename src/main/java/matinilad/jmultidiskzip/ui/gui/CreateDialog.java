@@ -48,7 +48,7 @@ import javax.swing.JPasswordField;
 public class CreateDialog extends javax.swing.JDialog {
 
     private boolean auto = false;
-    
+
     public CreateDialog(java.awt.Frame parent, boolean modal) {
         super(parent, modal);
         initComponents();
@@ -84,11 +84,13 @@ public class CreateDialog extends javax.swing.JDialog {
         showPasswordField = new javax.swing.JCheckBox();
         randomCharactersLabel = new javax.swing.JLabel();
         randomCharacters = new javax.swing.JTextField();
+        confirmPasswordLabel = new javax.swing.JLabel();
+        confirmPasswordField = new javax.swing.JPasswordField();
 
         setDefaultCloseOperation(javax.swing.WindowConstants.DISPOSE_ON_CLOSE);
         setTitle("Create");
         setIconImage(new ImageIcon(MainWindow.class.getResource("create.png")).getImage());
-        setMinimumSize(new java.awt.Dimension(200, 400));
+        setMinimumSize(new java.awt.Dimension(300, 460));
         setType(java.awt.Window.Type.POPUP);
 
         jPanel1.setBorder(javax.swing.BorderFactory.createTitledBorder("Input files (Drag and drop supported)"));
@@ -225,10 +227,15 @@ public class CreateDialog extends javax.swing.JDialog {
             }
         });
 
-        randomCharactersLabel.setText("Type random characters below:");
+        randomCharactersLabel.setText("Salt (Type random characters below or leave empty):");
         randomCharactersLabel.setEnabled(false);
 
         randomCharacters.setEnabled(false);
+
+        confirmPasswordLabel.setText("Confirm password:");
+        confirmPasswordLabel.setEnabled(false);
+
+        confirmPasswordField.setEnabled(false);
 
         javax.swing.GroupLayout layout = new javax.swing.GroupLayout(getContentPane());
         getContentPane().setLayout(layout);
@@ -237,6 +244,7 @@ public class CreateDialog extends javax.swing.JDialog {
             .addGroup(layout.createSequentialGroup()
                 .addContainerGap()
                 .addGroup(layout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
+                    .addComponent(confirmPasswordField)
                     .addComponent(randomCharacters)
                     .addComponent(jPanel1, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, Short.MAX_VALUE)
                     .addComponent(jPanel2, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, Short.MAX_VALUE)
@@ -250,8 +258,9 @@ public class CreateDialog extends javax.swing.JDialog {
                         .addComponent(showPasswordField))
                     .addGroup(layout.createSequentialGroup()
                         .addGroup(layout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
+                            .addComponent(randomCharactersLabel)
                             .addComponent(encryptWithAPassword)
-                            .addComponent(randomCharactersLabel))
+                            .addComponent(confirmPasswordLabel))
                         .addGap(0, 0, Short.MAX_VALUE)))
                 .addContainerGap())
         );
@@ -269,10 +278,14 @@ public class CreateDialog extends javax.swing.JDialog {
                     .addComponent(passwordField, javax.swing.GroupLayout.PREFERRED_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.PREFERRED_SIZE)
                     .addComponent(showPasswordField))
                 .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
+                .addComponent(confirmPasswordLabel)
+                .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
+                .addComponent(confirmPasswordField, javax.swing.GroupLayout.PREFERRED_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.PREFERRED_SIZE)
+                .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
                 .addComponent(randomCharactersLabel)
                 .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
                 .addComponent(randomCharacters, javax.swing.GroupLayout.PREFERRED_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.PREFERRED_SIZE)
-                .addGap(10, 10, 10)
+                .addGap(12, 12, 12)
                 .addGroup(layout.createParallelGroup(javax.swing.GroupLayout.Alignment.BASELINE)
                     .addComponent(createButton)
                     .addComponent(settingsButton))
@@ -349,11 +362,25 @@ public class CreateDialog extends javax.swing.JDialog {
                 JOptionPane.showMessageDialog(this, "Password is empty", "Error", JOptionPane.ERROR_MESSAGE);
                 return;
             }
+            if (!this.showPasswordField.isSelected()) {
+                char[] confirm = this.confirmPasswordField.getPassword();
+                try {
+                    if (!Arrays.equals(confirm, password)) {
+                        Arrays.fill(password, '\0');
+                        Toolkit.getDefaultToolkit().beep();
+                        JOptionPane.showMessageDialog(this, "Passwords are not equal!", "Error", JOptionPane.ERROR_MESSAGE);
+                        return;
+                    }
+                } finally {
+                    Arrays.fill(confirm, '\0');
+                }
+            }
         }
 
         CreateOperation operation;
         try {
             this.passwordField.setText("");
+            this.confirmPasswordField.setText("");
             DefaultListModel<String> model = (DefaultListModel<String>) this.fileList.getModel();
 
             Path outputFile = Path.of(this.outputFileField.getText());
@@ -393,19 +420,27 @@ public class CreateDialog extends javax.swing.JDialog {
     }//GEN-LAST:event_createButtonActionPerformed
 
     private void encryptWithAPasswordActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_encryptWithAPasswordActionPerformed
-        boolean enabled = this.encryptWithAPassword.isSelected();
-        this.passwordField.setEnabled(enabled);
-        this.showPasswordField.setEnabled(enabled);
-        this.randomCharactersLabel.setEnabled(enabled);
-        this.randomCharacters.setEnabled(enabled);
+        boolean e = this.encryptWithAPassword.isSelected();
+        this.passwordField.setEnabled(e);
+        this.showPasswordField.setEnabled(e);
+        this.confirmPasswordField.setEnabled(e);
+        this.confirmPasswordLabel.setEnabled(e);
+        this.randomCharactersLabel.setEnabled(e);
+        this.randomCharacters.setEnabled(e);
+        this.passwordField.setText("");
+        this.confirmPasswordField.setText("");
+        this.showPasswordField.setSelected(false);
     }//GEN-LAST:event_encryptWithAPasswordActionPerformed
 
     private void showPasswordFieldActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_showPasswordFieldActionPerformed
-        if (this.showPasswordField.isSelected()) {
+        boolean b = this.showPasswordField.isSelected();
+        if (b) {
             this.passwordField.setEchoChar('\0');
         } else {
             this.passwordField.setEchoChar(new JPasswordField().getEchoChar());
         }
+        this.confirmPasswordLabel.setEnabled(!b);
+        this.confirmPasswordField.setEnabled(!b);
     }//GEN-LAST:event_showPasswordFieldActionPerformed
 
     protected void auto(Path[] input, Path output) {
@@ -424,6 +459,8 @@ public class CreateDialog extends javax.swing.JDialog {
     // Variables declaration - do not modify//GEN-BEGIN:variables
     private javax.swing.JButton addButton;
     private javax.swing.JButton clearButton;
+    private javax.swing.JPasswordField confirmPasswordField;
+    private javax.swing.JLabel confirmPasswordLabel;
     private javax.swing.JButton createButton;
     private javax.swing.JCheckBox encryptWithAPassword;
     private javax.swing.JList<String> fileList;
